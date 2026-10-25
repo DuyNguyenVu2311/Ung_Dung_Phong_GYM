@@ -32,7 +32,11 @@ class StorageService {
   UserProfile? loadProfile() {
     final s = _prefs?.getString(_kProfile);
     if (s == null) return null;
-    return UserProfile.fromJsonString(s);
+    try {
+      return UserProfile.fromJsonString(s);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> saveGoal(String goal) async {
@@ -60,13 +64,21 @@ class StorageService {
   }
 
   Future<void> saveWorkoutSessions(List<WorkoutSession> sessions) async {
-    final list = sessions.map((s) => s.toJson()).toList();
-    await _prefs?.setStringList(_kWorkoutSessions, list.map((e) => e.toString()).toList());
+    final list = sessions.map((s) => s.toJsonString()).toList();
+    await _prefs?.setStringList(_kWorkoutSessions, list);
   }
 
   List<WorkoutSession> loadWorkoutSessions() {
     final list = _prefs?.getStringList(_kWorkoutSessions) ?? [];
-    return list.map((e) => WorkoutSession.fromJsonString(e)).toList();
+    final result = <WorkoutSession>[];
+    for (final e in list) {
+      try {
+        result.add(WorkoutSession.fromJsonString(e));
+      } catch (_) {
+        // Bỏ qua hoặc tự phục hồi nếu gặp chuỗi JSON bị lỗi trước đó
+      }
+    }
+    return result;
   }
 
   Future<void> addWorkoutSession(WorkoutSession session) async {
