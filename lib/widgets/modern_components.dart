@@ -1,5 +1,9 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+
+import '../services/app_localization.dart';
+
 import '../theme/app_theme.dart';
 
 class GlassCard extends StatelessWidget {
@@ -19,23 +23,28 @@ class GlassCard extends StatelessWidget {
     this.color,
     this.gradient,
     this.border,
-    this.blur = true,
+    this.blur = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     Widget card = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: color ?? AppColors.surface.withOpacity(0.85),
+        color: color ?? AppColors.surface.withValues(alpha: 0.85),
         gradient: gradient,
         borderRadius: BorderRadius.circular(borderRadius),
         border: border ?? Border.all(color: AppColors.divider, width: 1),
-        boxShadow: const [
-          BoxShadow(color: AppColors.shadow, blurRadius: 20, offset: Offset(0, 10)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.shadow,
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
         ],
       ),
-      child: child,
+      child: Material(type: MaterialType.transparency, child: child),
     );
 
     if (blur) {
@@ -71,35 +80,40 @@ class GradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return Container(
-      height: height,
+      constraints: BoxConstraints(minHeight: height),
       decoration: BoxDecoration(
         gradient: gradient,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.35),
+            color: AppColors.primary.withValues(alpha: 0.35),
             blurRadius: 20,
-            offset: const Offset(0, 8),
+            offset: Offset(0, 8),
           ),
         ],
       ),
-        child: ElevatedButton(
-          onPressed: isLoading ? null : onPressed,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            padding: padding,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            elevation: 0,
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          padding: padding,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
           ),
-          child: isLoading
-            ? const SizedBox(
+          elevation: 0,
+        ),
+        child: isLoading
+            ? SizedBox(
                 height: 20,
                 width: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.textInverse),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    AppColors.textInverse,
+                  ),
                 ),
               )
             : child,
@@ -115,26 +129,30 @@ class OutlineButton extends StatelessWidget {
   final Color borderColor;
   final Color textColor;
 
-  const OutlineButton({
+  OutlineButton({
     super.key,
     required this.child,
     required this.onPressed,
     this.height = 56,
-    this.borderColor = AppColors.divider,
-    this.textColor = AppColors.textPrimary,
-  });
+    Color? borderColor,
+    Color? textColor,
+  }) : borderColor = borderColor ?? AppColors.divider,
+       textColor = textColor ?? AppColors.textPrimary;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height,
+    AppSettingsScope.watch(context);
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: height),
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: textColor,
           side: BorderSide(color: borderColor, width: 1.5),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          padding: EdgeInsets.symmetric(horizontal: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
         child: child,
       ),
@@ -149,19 +167,20 @@ class ModernStatCard extends StatelessWidget {
   final Color color;
   final String? subtext;
 
-  const ModernStatCard({
+  ModernStatCard({
     super.key,
     required this.label,
     required this.value,
     required this.icon,
-    this.color = AppColors.primary,
+    Color? color,
     this.subtext,
-  });
+  }) : color = color ?? AppColors.primary;
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return GlassCard(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(18),
       borderRadius: 20,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,28 +191,36 @@ class ModernStatCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
+                  color: color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: color, size: 20),
               ),
-              const Spacer(),
-              Icon(Icons.trending_up, color: color.withOpacity(0.6), size: 16),
+              Spacer(),
+              Icon(
+                Icons.trending_up,
+                color: color.withValues(alpha: 0.6),
+                size: 16,
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
+          SizedBox(height: 12),
+          LocalizedText(
             value,
-            style: AppTextTheme.headlineMedium.copyWith(fontWeight: FontWeight.w800),
+            style: AppTextTheme.headlineMedium.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(
+          SizedBox(height: 4),
+          LocalizedText(
             label,
-            style: AppTextTheme.caption.copyWith(color: AppColors.textSecondary),
+            style: AppTextTheme.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           if (subtext != null) ...[
-            const SizedBox(height: 4),
-            Text(subtext!, style: AppTextTheme.bodySmall),
+            SizedBox(height: 4),
+            LocalizedText(subtext!, style: AppTextTheme.bodySmall),
           ],
         ],
       ),
@@ -217,8 +244,9 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -226,27 +254,41 @@ class SectionHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: AppTextTheme.headlineMedium),
+                LocalizedText(title, style: AppTextTheme.headlineMedium),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 4),
-                  Text(subtitle!, style: AppTextTheme.bodySmall.copyWith(color: AppColors.textMuted)),
+                  SizedBox(height: 4),
+                  LocalizedText(
+                    subtitle!,
+                    style: AppTextTheme.bodySmall.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+                  ),
                 ],
               ],
             ),
           ),
-          if (action != null) action!,
+          ?action,
           if (onActionTap != null && action == null)
             InkWell(
               onTap: onActionTap,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
-                padding: const EdgeInsets.all(8),
+                padding: EdgeInsets.all(8),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Xem tất cả', style: AppTextTheme.labelMedium.copyWith(color: AppColors.primary)),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.chevron_right, color: AppColors.primary, size: 16),
+                    LocalizedText(
+                      'Xem tất cả',
+                      style: AppTextTheme.labelMedium.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Icon(
+                      Icons.chevron_right,
+                      color: AppColors.primary,
+                      size: 16,
+                    ),
                   ],
                 ),
               ),
@@ -261,85 +303,48 @@ class ModernBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int>? onTap;
 
-  const ModernBottomNav({
-    super.key,
-    required this.currentIndex,
-    this.onTap,
-  });
+  const ModernBottomNav({super.key, required this.currentIndex, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final items = const [
-      BottomNavItem(icon: Icons.home_rounded, label: 'Trang chủ'),
-      BottomNavItem(icon: Icons.calendar_today_rounded, label: 'Lịch tập'),
-      BottomNavItem(icon: Icons.fitness_center_rounded, label: 'Bài tập'),
-      BottomNavItem(icon: Icons.trending_up_rounded, label: 'Tiến độ'),
-      BottomNavItem(icon: Icons.person_rounded, label: 'Cá nhân'),
-    ];
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-      height: 72,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.divider, width: 1),
-        boxShadow: [
-          BoxShadow(color: AppColors.shadow.withOpacity(0.4), blurRadius: 24, offset: const Offset(0, 10)),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(items.length, (i) {
-              final isActive = currentIndex == i;
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => onTap?.call(i),
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    height: double.infinity,
-                    color: isActive ? AppColors.primary.withOpacity(0.12) : Colors.transparent,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          items[i].icon,
-                          color: isActive ? AppColors.primary : AppColors.textMuted,
-                          size: 24,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          items[i].label,
-                          style: TextStyle(
-                            fontFamily: AppTextTheme.font,
-                            fontSize: 11,
-                            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                            color: isActive ? AppColors.primary : AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
+    AppSettingsScope.watch(context);
+    return NavigationBar(
+      selectedIndex: currentIndex,
+      onDestinationSelected: onTap,
+      height: 80 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5),
+      elevation: 0,
+      backgroundColor: AppColors.surfaceElevated,
+      indicatorColor: AppColors.primary.withValues(alpha: .18),
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      destinations: [
+        NavigationDestination(
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home_rounded),
+          label: tr('Trang chủ'),
         ),
-      ),
+        NavigationDestination(
+          icon: Icon(Icons.calendar_today_outlined),
+          selectedIcon: Icon(Icons.calendar_today_rounded),
+          label: tr('Lịch tập'),
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.fitness_center_outlined),
+          selectedIcon: Icon(Icons.fitness_center_rounded),
+          label: tr('Bài tập'),
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.card_membership_outlined),
+          selectedIcon: Icon(Icons.card_membership_rounded),
+          label: tr('Hội viên'),
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.person_outline_rounded),
+          selectedIcon: Icon(Icons.person_rounded),
+          label: tr('Cá nhân'),
+        ),
+      ],
     );
   }
-}
-
-class BottomNavItem {
-  final IconData icon;
-  final String label;
-  const BottomNavItem({required this.icon, required this.label});
 }
 
 class ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -359,19 +364,25 @@ class ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => Size.fromHeight(kToolbarHeight);
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return Container(
       height: preferredSize.height,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0x80000000), Color(0x1A000000)],
+        gradient: LinearGradient(
+          colors: [AppColors.surface, AppColors.background],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
-        border: Border(bottom: BorderSide(color: AppColors.divider.withOpacity(0.5), width: 1)),
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.divider.withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
       ),
       child: ClipRRect(
         child: BackdropFilter(
@@ -382,7 +393,7 @@ class ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
             scrolledUnderElevation: 0,
             centerTitle: centerTitle,
             leading: leading,
-            title: Text(title, style: AppTextTheme.titleLarge),
+            title: LocalizedText(title, style: AppTextTheme.titleLarge),
             actions: actions,
           ),
         ),
@@ -399,27 +410,35 @@ class MuscleTag extends StatelessWidget {
 
   Color _color(String g) {
     switch (g) {
-      case 'Ngực': return AppColors.primary;
-      case 'Lưng': return AppColors.secondary;
-      case 'Chân': return AppColors.warning;
-      case 'Vai': return AppColors.accent;
-      case 'Tay': return AppColors.accentPurple;
-      case 'Cơ bụng': return AppColors.error;
-      default: return AppColors.textMuted;
+      case 'Ngực':
+        return AppColors.primary;
+      case 'Lưng':
+        return AppColors.secondary;
+      case 'Chân':
+        return AppColors.warning;
+      case 'Vai':
+        return AppColors.accent;
+      case 'Tay':
+        return AppColors.accentPurple;
+      case 'Cơ bụng':
+        return AppColors.error;
+      default:
+        return AppColors.textMuted;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     final color = _color(muscleGroup);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
       ),
-      child: Text(
+      child: LocalizedText(
         muscleGroup,
         style: TextStyle(
           fontFamily: AppTextTheme.font,
@@ -457,11 +476,12 @@ class ExerciseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     final color = _muscleColor(muscleGroup);
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
+        margin: EdgeInsets.only(bottom: 14),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(18),
@@ -469,8 +489,12 @@ class ExerciseCard extends StatelessWidget {
             color: isDone ? AppColors.primary : AppColors.divider,
             width: isDone ? 1.5 : 1,
           ),
-          boxShadow: const [
-            BoxShadow(color: AppColors.shadow, blurRadius: 16, offset: Offset(0, 6)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.shadow,
+              blurRadius: 16,
+              offset: Offset(0, 6),
+            ),
           ],
         ),
         child: ClipRRect(
@@ -478,22 +502,29 @@ class ExerciseCard extends StatelessWidget {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(16),
               child: Row(
                 children: [
                   Container(
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.15),
+                      color: color.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: color.withOpacity(0.4), width: 1),
+                      border: Border.all(
+                        color: color.withValues(alpha: 0.4),
+                        width: 1,
+                      ),
                     ),
                     child: Center(
-                      child: Icon(_muscleIcon(muscleGroup), color: color, size: 24),
+                      child: Icon(
+                        _muscleIcon(muscleGroup),
+                        color: color,
+                        size: 24,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -501,9 +532,11 @@ class ExerciseCard extends StatelessWidget {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(
+                              child: LocalizedText(
                                 title,
-                                style: AppTextTheme.titleMedium.copyWith(fontWeight: FontWeight.w700),
+                                style: AppTextTheme.titleMedium.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -515,29 +548,42 @@ class ExerciseCard extends StatelessWidget {
                                   color: AppColors.primary,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.check, color: AppColors.textInverse, size: 14),
+                                child: Icon(
+                                  Icons.check,
+                                  color: AppColors.textInverse,
+                                  size: 14,
+                                ),
                               ),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
+                        SizedBox(height: 6),
+                        LocalizedText(
                           subtitle,
-                          style: AppTextTheme.bodySmall.copyWith(color: AppColors.textSecondary),
+                          style: AppTextTheme.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
                         ),
-                        const SizedBox(height: 10),
+                        SizedBox(height: 10),
                         Row(
                           children: [
-                            _miniStat('${sets} hiệp', Icons.repeat),
-                            const SizedBox(width: 10),
-                            _miniStat('${reps} lần', Icons.fitness_center),
-                            const SizedBox(width: 10),
-                            _miniStat('${weight.toStringAsFixed(0)} kg', Icons.monitor_weight),
+                            _miniStat('$sets hiệp', Icons.repeat),
+                            SizedBox(width: 10),
+                            _miniStat('$reps lần', Icons.fitness_center),
+                            SizedBox(width: 10),
+                            _miniStat(
+                              '${weight.toStringAsFixed(0)} kg',
+                              Icons.monitor_weight,
+                            ),
                           ],
                         ),
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right, color: AppColors.textMuted, size: 20),
+                  Icon(
+                    Icons.chevron_right,
+                    color: AppColors.textMuted,
+                    size: 20,
+                  ),
                 ],
               ),
             ),
@@ -552,33 +598,50 @@ class ExerciseCard extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 14, color: AppColors.textMuted),
-        const SizedBox(width: 4),
-        Text(value, style: AppTextTheme.caption.copyWith(fontWeight: FontWeight.w600)),
+        SizedBox(width: 4),
+        LocalizedText(
+          value,
+          style: AppTextTheme.caption.copyWith(fontWeight: FontWeight.w600),
+        ),
       ],
     );
   }
 
   Color _muscleColor(String g) {
     switch (g) {
-      case 'Ngực': return AppColors.primary;
-      case 'Lưng': return AppColors.secondary;
-      case 'Chân': return AppColors.warning;
-      case 'Vai': return AppColors.accent;
-      case 'Tay': return AppColors.accentPurple;
-      case 'Cơ bụng': return AppColors.error;
-      default: return AppColors.textMuted;
+      case 'Ngực':
+        return AppColors.primary;
+      case 'Lưng':
+        return AppColors.secondary;
+      case 'Chân':
+        return AppColors.warning;
+      case 'Vai':
+        return AppColors.accent;
+      case 'Tay':
+        return AppColors.accentPurple;
+      case 'Cơ bụng':
+        return AppColors.error;
+      default:
+        return AppColors.textMuted;
     }
   }
 
   IconData _muscleIcon(String g) {
     switch (g) {
-      case 'Ngực': return Icons.fitness_center_rounded;
-      case 'Lưng': return Icons.pool_rounded;
-      case 'Chân': return Icons.directions_run_rounded;
-      case 'Vai': return Icons.accessibility_rounded;
-      case 'Tay': return Icons.accessibility_new_rounded;
-      case 'Cơ bụng': return Icons.widgets_rounded;
-      default: return Icons.widgets_rounded;
+      case 'Ngực':
+        return Icons.fitness_center_rounded;
+      case 'Lưng':
+        return Icons.pool_rounded;
+      case 'Chân':
+        return Icons.directions_run_rounded;
+      case 'Vai':
+        return Icons.accessibility_rounded;
+      case 'Tay':
+        return Icons.accessibility_new_rounded;
+      case 'Cơ bụng':
+        return Icons.widgets_rounded;
+      default:
+        return Icons.widgets_rounded;
     }
   }
 }
@@ -590,17 +653,18 @@ class EmptyState extends StatelessWidget {
   final Widget? action;
   final Color iconColor;
 
-  const EmptyState({
+  EmptyState({
     super.key,
     this.icon = Icons.fitness_center_rounded,
     required this.title,
     required this.message,
     this.action,
-    this.iconColor = AppColors.primary,
-  });
+    Color? iconColor,
+  }) : iconColor = iconColor ?? AppColors.primary;
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -609,19 +673,20 @@ class EmptyState extends StatelessWidget {
             width: 96,
             height: 96,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
+              color: iconColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(24),
             ),
             child: Icon(icon, color: iconColor, size: 40),
           ),
-          const SizedBox(height: 20),
-          Text(title, style: AppTextTheme.headlineMedium),
-          const SizedBox(height: 8),
-          Text(message, style: AppTextTheme.bodySmall.copyWith(color: AppColors.textMuted), textAlign: TextAlign.center),
-          if (action != null) ...[
-            const SizedBox(height: 20),
-            action!,
-          ],
+          SizedBox(height: 20),
+          LocalizedText(title, style: AppTextTheme.headlineMedium),
+          SizedBox(height: 8),
+          LocalizedText(
+            message,
+            style: AppTextTheme.bodySmall.copyWith(color: AppColors.textMuted),
+            textAlign: TextAlign.center,
+          ),
+          if (action != null) ...[SizedBox(height: 20), action!],
         ],
       ),
     );
@@ -634,16 +699,17 @@ class ProgressRing extends StatelessWidget {
   final Color color;
   final Widget? child;
 
-  const ProgressRing({
+  ProgressRing({
     super.key,
     required this.progress,
     this.size = 100,
-    this.color = AppColors.primary,
+    Color? color,
     this.child,
-  });
+  }) : color = color ?? AppColors.primary;
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return SizedBox(
       width: size,
       height: size,
@@ -656,7 +722,7 @@ class ProgressRing extends StatelessWidget {
             backgroundColor: AppColors.divider,
             valueColor: AlwaysStoppedAnimation<Color>(color),
           ),
-          if (child != null) child!,
+          ?child,
         ],
       ),
     );
@@ -679,8 +745,9 @@ class PillSelector<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return SizedBox(
-      height: 44,
+      height: 48 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: values.length,
@@ -688,27 +755,32 @@ class PillSelector<T> extends StatelessWidget {
           final v = values[i];
           final isActive = v == selected;
           return Padding(
-            padding: const EdgeInsets.only(right: 10),
+            padding: EdgeInsets.only(right: 10),
             child: GestureDetector(
               onTap: () => onChanged(v),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                duration: Duration(milliseconds: 200),
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   color: isActive ? AppColors.primary : AppColors.surface,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: isActive ? AppColors.primary : AppColors.divider, width: 1),
+                  border: Border.all(
+                    color: isActive ? AppColors.primary : AppColors.divider,
+                    width: 1,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    LocalizedText(
                       labelBuilder(v),
                       style: TextStyle(
                         fontFamily: AppTextTheme.font,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: isActive ? AppColors.textInverse : AppColors.textSecondary,
+                        color: isActive
+                            ? AppColors.textInverse
+                            : AppColors.textSecondary,
                       ),
                     ),
                   ],
@@ -737,24 +809,25 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => Size.fromHeight(kToolbarHeight);
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    AppSettingsScope.watch(context);
+    return SizedBox(
       height: preferredSize.height,
       child: ClipRRect(
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            color: AppColors.background.withOpacity(0.4),
+            color: AppColors.background.withValues(alpha: 0.4),
             child: AppBar(
               backgroundColor: Colors.transparent,
               elevation: 0,
               scrolledUnderElevation: 0,
               centerTitle: centerTitle,
               leading: leading,
-              title: Text(title, style: AppTextTheme.titleLarge),
+              title: LocalizedText(title, style: AppTextTheme.titleLarge),
               actions: actions,
             ),
           ),
@@ -769,15 +842,17 @@ class DividerLine extends StatelessWidget {
   final Color color;
   final EdgeInsetsGeometry margin;
 
-  const DividerLine({super.key, this.height = 1, this.color = AppColors.divider, this.margin = EdgeInsets.zero});
+  DividerLine({
+    super.key,
+    this.height = 1,
+    Color? color,
+    this.margin = EdgeInsets.zero,
+  }) : color = color ?? AppColors.divider;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      color: color,
-      margin: margin,
-    );
+    AppSettingsScope.watch(context);
+    return Container(height: height, color: color, margin: margin);
   }
 }
 
@@ -786,10 +861,16 @@ class ShimmerLoader extends StatelessWidget {
   final double height;
   final BorderRadius borderRadius;
 
-  const ShimmerLoader({super.key, this.width = double.infinity, this.height = 16, this.borderRadius = const BorderRadius.all(Radius.circular(8))});
+  const ShimmerLoader({
+    super.key,
+    this.width = double.infinity,
+    this.height = 16,
+    this.borderRadius = const BorderRadius.all(Radius.circular(8)),
+  });
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return Container(
       width: width,
       height: height,
@@ -807,16 +888,17 @@ class HeroGradientCard extends StatelessWidget {
   final double borderRadius;
   final Gradient gradient;
 
-  const HeroGradientCard({
+  HeroGradientCard({
     super.key,
     required this.child,
     this.height = 200,
     this.borderRadius = 24,
-    this.gradient = AppGradients.surface,
-  });
+    Gradient? gradient,
+  }) : gradient = gradient ?? AppGradients.surface;
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return Container(
       height: height,
       width: double.infinity,

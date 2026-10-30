@@ -1,40 +1,52 @@
 import 'package:flutter/material.dart';
 
+import '../services/app_settings_service.dart';
+
 class AppColors {
-  static const Color background = Color(0xFF0A0B12);
-  static const Color surface = Color(0xFF11131B);
-  static const Color surfaceElevated = Color(0xFF191C25);
-  static const Color surfaceBright = Color(0xFF1E222D);
+  static Color get background =>
+      AppSettingsService.isLight ? Color(0xFFF5F7FB) : Color(0xFF08111F);
+  static Color get surface =>
+      AppSettingsService.isLight ? Color(0xFFFFFFFF) : Color(0xFF101B2D);
+  static Color get surfaceElevated =>
+      AppSettingsService.isLight ? Color(0xFFEDF2F8) : Color(0xFF17243A);
+  static Color get surfaceBright =>
+      AppSettingsService.isLight ? Color(0xFFE0E8F2) : Color(0xFF20304A);
 
-  static const Color primary = Color(0xFF00FF87);
-  static const Color primaryDark = Color(0xFF00B36E);
-  static const Color secondary = Color(0xFF00D4FF);
-  static const Color accent = Color(0xFFFF006E);
-  static const Color accentPurple = Color(0xFF8B5CF6);
+  static Color get primary =>
+      AppSettingsService.isLight ? Color(0xFF16805C) : Color(0xFF67E0B1);
+  static const Color primaryDark = Color(0xFF2DBE88);
+  static Color get secondary =>
+      AppSettingsService.isLight ? Color(0xFF2766B4) : Color(0xFF77AFFF);
+  static const Color accent = Color(0xFFFF8A7A);
+  static const Color accentPurple = Color(0xFFB69CFF);
 
-  static const Color textPrimary = Color(0xFFFFFFFF);
-  static const Color textSecondary = Color(0xFF94A3B8);
-  static const Color textMuted = Color(0xFF64748B);
-  static const Color textInverse = Color(0xFF0A0B12);
+  static Color get textPrimary =>
+      AppSettingsService.isLight ? Color(0xFF142033) : Color(0xFFFFFFFF);
+  static Color get textSecondary =>
+      AppSettingsService.isLight ? Color(0xFF3C4D65) : Color(0xFFC4D0E3);
+  static Color get textMuted =>
+      AppSettingsService.isLight ? Color(0xFF586B85) : Color(0xFF95A6BF);
+  static const Color textInverse = Color(0xFF07121E);
 
-  static const Color success = Color(0xFF00FF87);
-  static const Color warning = Color(0xFFFFB800);
-  static const Color error = Color(0xFFFF4757);
-  static const Color info = Color(0xFF00D4FF);
+  static const Color success = Color(0xFF67E0B1);
+  static const Color warning = Color(0xFFFFC96B);
+  static const Color error = Color(0xFFFF7F87);
+  static const Color info = Color(0xFF77AFFF);
 
-  static const Color divider = Color(0xFF1F2430);
+  static Color get divider =>
+      AppSettingsService.isLight ? Color(0xFFCCD6E4) : Color(0xFF2A3952);
   static const Color shadow = Color(0x1A000000);
 }
 
 class AppGradients {
   static const LinearGradient primary = LinearGradient(
-    colors: [Color(0xFF00FF87), Color(0xFF00D4FF)],
+    colors: [Color(0xFF67E0B1), Color(0xFF77AFFF)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const LinearGradient surface = LinearGradient(
-    colors: [Color(0xFF191C25), Color(0xFF0F121A)],
+  static LinearGradient get surface => LinearGradient(
+    colors: [AppColors.surfaceBright, AppColors.surface],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -66,78 +78,78 @@ class AppGradients {
 }
 
 class AppTextTheme {
-  static const String font = 'Inter';
+  static const String font = 'BeVietnamPro';
 
-  static const TextStyle displayLarge = TextStyle(
+  static TextStyle get displayLarge => TextStyle(
     fontFamily: font,
-    fontSize: 32,
-    fontWeight: FontWeight.w800,
-    color: AppColors.textPrimary,
-    letterSpacing: -0.5,
-    height: 1.1,
-  );
-  static const TextStyle displayMedium = TextStyle(
-    fontFamily: font,
-    fontSize: 28,
-    fontWeight: FontWeight.w700,
+    fontSize: 30,
+    fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
     letterSpacing: -0.4,
-    height: 1.15,
+    height: 1.45,
   );
-  static const TextStyle headlineLarge = TextStyle(
+  static TextStyle get displayMedium => TextStyle(
+    fontFamily: font,
+    fontSize: 26,
+    fontWeight: FontWeight.w600,
+    color: AppColors.textPrimary,
+    letterSpacing: -0.4,
+    height: 1.45,
+  );
+  static TextStyle get headlineLarge => TextStyle(
     fontFamily: font,
     fontSize: 24,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
     letterSpacing: -0.3,
-    height: 1.2,
+    height: 1.45,
   );
-  static const TextStyle headlineMedium = TextStyle(
+  static TextStyle get headlineMedium => TextStyle(
     fontFamily: font,
     fontSize: 20,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
     letterSpacing: -0.2,
-    height: 1.25,
+    height: 1.5,
   );
-  static const TextStyle titleLarge = TextStyle(
+  static TextStyle get titleLarge => TextStyle(
     fontFamily: font,
     fontSize: 18,
     fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
     letterSpacing: -0.1,
-    height: 1.3,
+    height: 1.5,
   );
-  static const TextStyle titleMedium = TextStyle(
+  static TextStyle get titleMedium => TextStyle(
     fontFamily: font,
     fontSize: 16,
     fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
     letterSpacing: -0.1,
-    height: 1.35,
+    height: 1.5,
   );
-  static const TextStyle bodyLarge = TextStyle(
+  static TextStyle get bodyLarge => TextStyle(
     fontFamily: font,
     fontSize: 16,
     fontWeight: FontWeight.w400,
     color: AppColors.textPrimary,
     height: 1.5,
   );
-  static const TextStyle bodyMedium = TextStyle(
+  static TextStyle get bodyMedium => TextStyle(
     fontFamily: font,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: FontWeight.w400,
     color: AppColors.textPrimary,
-    height: 1.5,
+    height: 1.6,
   );
-  static const TextStyle bodySmall = TextStyle(
+  static TextStyle get bodySmall => TextStyle(
     fontFamily: font,
     fontSize: 13,
     fontWeight: FontWeight.w400,
     color: AppColors.textSecondary,
     height: 1.5,
   );
-  static const TextStyle labelLarge = TextStyle(
+  static TextStyle get labelLarge => TextStyle(
     fontFamily: font,
     fontSize: 14,
     fontWeight: FontWeight.w600,
@@ -145,17 +157,17 @@ class AppTextTheme {
     letterSpacing: 0.1,
     height: 1.4,
   );
-  static const TextStyle labelMedium = TextStyle(
+  static TextStyle get labelMedium => TextStyle(
     fontFamily: font,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: FontWeight.w600,
     color: AppColors.textSecondary,
     letterSpacing: 0.1,
     height: 1.4,
   );
-  static const TextStyle caption = TextStyle(
+  static TextStyle get caption => TextStyle(
     fontFamily: font,
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: FontWeight.w500,
     color: AppColors.textMuted,
     letterSpacing: 0.2,
@@ -164,6 +176,30 @@ class AppTextTheme {
 }
 
 class AppTheme {
+  static ThemeData get lightTheme {
+    final base = ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      fontFamily: AppTextTheme.font,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: AppColors.primaryDark,
+        brightness: Brightness.light,
+      ),
+    );
+    return base.copyWith(
+      scaffoldBackgroundColor: Color(0xFFF4F7FA),
+      appBarTheme: AppBarTheme(
+        backgroundColor: Color(0xFFF4F7FA),
+        foregroundColor: Color(0xFF111827),
+        elevation: 0,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
@@ -171,21 +207,19 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.background,
       fontFamily: AppTextTheme.font,
 
-      colorScheme: const ColorScheme.dark(
+      colorScheme: ColorScheme.dark(
         primary: AppColors.primary,
         secondary: AppColors.secondary,
         surface: AppColors.surface,
-        background: AppColors.background,
         error: AppColors.error,
         onPrimary: AppColors.textInverse,
         onSecondary: AppColors.textInverse,
         onSurface: AppColors.textPrimary,
-        onBackground: AppColors.textPrimary,
         onError: AppColors.textPrimary,
         brightness: Brightness.dark,
       ),
 
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
@@ -193,7 +227,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
       ),
 
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: AppColors.surface,
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppColors.primary,
@@ -202,12 +236,12 @@ class AppTheme {
         showUnselectedLabels: true,
         selectedLabelStyle: TextStyle(
           fontFamily: AppTextTheme.font,
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
         unselectedLabelStyle: TextStyle(
           fontFamily: AppTextTheme.font,
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: FontWeight.w400,
         ),
         elevation: 0,
@@ -228,10 +262,12 @@ class AppTheme {
           disabledBackgroundColor: AppColors.divider,
           disabledForegroundColor: AppColors.textMuted,
           elevation: 0,
-          shadowColor: AppColors.primary.withOpacity(0.4),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          textStyle: const TextStyle(
+          shadowColor: AppColors.primary.withValues(alpha: 0.4),
+          padding: EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: TextStyle(
             fontFamily: AppTextTheme.font,
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -243,13 +279,13 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        hintStyle: const TextStyle(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        hintStyle: TextStyle(
           fontFamily: AppTextTheme.font,
           fontSize: 14,
           color: AppColors.textMuted,
         ),
-        labelStyle: const TextStyle(
+        labelStyle: TextStyle(
           fontFamily: AppTextTheme.font,
           fontSize: 13,
           fontWeight: FontWeight.w500,
@@ -277,7 +313,7 @@ class AppTheme {
         ),
       ),
 
-      dividerTheme: const DividerThemeData(
+      dividerTheme: DividerThemeData(
         color: AppColors.divider,
         space: 1,
         thickness: 1,
@@ -285,7 +321,7 @@ class AppTheme {
 
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.surfaceElevated,
-        contentTextStyle: const TextStyle(
+        contentTextStyle: TextStyle(
           fontFamily: AppTextTheme.font,
           fontSize: 14,
           color: AppColors.textPrimary,

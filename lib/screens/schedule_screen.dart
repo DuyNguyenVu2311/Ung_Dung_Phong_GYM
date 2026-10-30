@@ -1,11 +1,15 @@
-import 'dart:ui';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
-import '../widgets/modern_components.dart';
+
+import '../services/app_localization.dart';
+
 import '../repositories/workout_plan_repository.dart';
 import '../repositories/workout_schedule_repository.dart';
 import '../services/storage_service.dart';
-import 'workout_session_screen.dart';
+import '../theme/app_theme.dart';
+import '../widgets/modern_components.dart';
+import '../services/app_clock.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -14,27 +18,56 @@ class ScheduleScreen extends StatefulWidget {
   State<ScheduleScreen> createState() => _ScheduleScreenState();
 }
 
-class _ScheduleScreenState extends State<ScheduleScreen> {
+class _ScheduleScreenState extends State<ScheduleScreen>
+    with WidgetsBindingObserver {
   List<Map<String, dynamic>> _schedule = [];
   bool _loading = true;
+  late final Timer _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
   }
 
   Future<void> _load() async {
-    final goal = StorageService.instance.loadGoal() ?? 'muscle';
-    final level = StorageService.instance.loadLevel() ?? 'beginner';
-    final sessions = StorageService.instance.loadSessionsPerWeek() ?? 4;
-
-    final plan = WorkoutPlanRepository.generatePlan(goal, level, sessions);
-    final existing = WorkoutScheduleRepository.loadSchedule();
-    final schedule = existing.isEmpty
-        ? WorkoutScheduleRepository.generateSchedule(plan)
-        : existing;
-
+    final profile = StorageService.instance.loadProfile();
+    final goal =
+        profile?.goal ?? StorageService.instance.loadGoal() ?? 'muscle';
+    final level =
+        profile?.experienceLevel ??
+        StorageService.instance.loadLevel() ??
+        'beginner';
+    final sessions =
+        profile?.sessionsPerWeek ??
+        StorageService.instance.loadSessionsPerWeek() ??
+        3;
+    final existing = await WorkoutScheduleRepository.ensureCurrentWeek();
+    final schedule = existing.isNotEmpty
+        ? existing
+        : await WorkoutScheduleRepository.generateSchedule(
+            WorkoutPlanRepository.generatePlan(
+              goal,
+              level,
+              sessions,
+              availableWeekdays: profile?.availableWeekdays,
+              profile: profile,
+            ),
+          );
     if (!mounted) return;
     setState(() {
       _schedule = schedule;
@@ -42,248 +75,406 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     });
   }
 
-  String _statusLabel(String s) {
-    switch (s) {
-      case 'planned': return 'Đã lên lịch';
-      case 'in_progress': return 'Đang thực hiện';
-      case 'completed': return 'Hoàn thành';
-      case 'rest_day': return 'Nghỉ';
-      default: return s;
-    }
-  }
-
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'completed': return AppColors.primary;
-      case 'in_progress': return AppColors.secondary;
-      case 'rest_day': return AppColors.textMuted;
-      default: return AppColors.textMuted;
-    }
+  String get _monthTitle {
+    final date = _schedule.isEmpty
+        ? AppClock.now()
+        : DateTime.tryParse(_schedule.first['date'] as String? ?? '') ??
+              AppClock.now();
+    return 'Tháng ${date.month}, ${date.year}';
   }
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     return Scaffold(
       backgroundColor: AppColors.background,
-      extendBodyBehindAppBar: true,
-      appBar: ModernAppBar(title: 'Lịch tập tuần', centerTitle: false),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SafeArea(
-              child: Column(
-                children: [
-                  const SizedBox(height: 12),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Tháng 10, 2026', style: AppTextTheme.headlineMedium),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.fitness_center_rounded, color: AppColors.primary, size: 14),
-                              const SizedBox(width: 6),
-                              Text('Tập trung', style: AppTextTheme.caption.copyWith(fontWeight: FontWeight.w700, color: AppColors.primary)),
-                            ],
+      body: SafeArea(
+        child: _loading
+            ? Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: CustomScrollView(
+                  physics: AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  slivers: [
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            LocalizedText(
+                              'Lịch tập',
+                              style: AppTextTheme.headlineLarge,
+                            ),
+                            SizedBox(height: 5),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                LocalizedText(
+                                  _monthTitle,
+                                  style: AppTextTheme.bodyMedium.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                _statusPill(
+                                  Icons.auto_awesome_rounded,
+                                  'Kế hoạch cá nhân',
+                                  AppColors.primary,
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 20),
+                            _weekStrip(),
+                            SizedBox(height: 24),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: LocalizedText(
+                                    'Lịch trong tuần',
+                                    style: AppTextTheme.titleLarge,
+                                  ),
+                                ),
+                                LocalizedText(
+                                  '${WorkoutScheduleRepository.completedCount()}/${WorkoutScheduleRepository.plannedCount()} hoàn thành',
+                                  style: AppTextTheme.caption,
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_schedule.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: EmptyState(
+                          icon: Icons.calendar_today_rounded,
+                          title: 'Chưa có lịch tập',
+                          message: 'Tạo kế hoạch phù hợp để bắt đầu.',
+                          action: FilledButton(
+                            onPressed: () =>
+                                Navigator.pushNamed(context, '/plan'),
+                            child: LocalizedText('Tạo kế hoạch'),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _weekStrip(),
-                  const SizedBox(height: 20),
-                  Expanded(
-                    child: _schedule.isEmpty
-                        ? EmptyState(
-                            icon: Icons.calendar_today_rounded,
-                            title: 'Chưa có lịch tập',
-                            message: 'Hãy tạo kế hoạch tập để bắt đầu lên lịch.',
-                            action: GradientButton(
-                              onPressed: () => Navigator.pushNamed(context, '/plan'),
-                              child: Text('Tạo kế hoạch', style: AppTextTheme.labelLarge.copyWith(fontWeight: FontWeight.w700, color: AppColors.textInverse)),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            itemCount: _schedule.length,
-                            itemBuilder: (context, i) {
-                              final d = _schedule[i];
-                              return _dayCard(d);
-                            },
-                          ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                      )
+                    else
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(20, 0, 20, 28),
+                        sliver: SliverList.separated(
+                          itemCount: _schedule.length,
+                          separatorBuilder: (_, _) => SizedBox(height: 12),
+                          itemBuilder: (_, index) => _dayCard(_schedule[index]),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-      bottomNavigationBar: const ModernBottomNav(currentIndex: 1, onTap: null),
+      ),
     );
   }
 
   Widget _weekStrip() {
-    final labels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20),
-          child: Text('Lịch tập trong tuần', style: TextStyle(fontFamily: AppTextTheme.font, fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.4)),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(color: AppColors.surface.withOpacity(0.6), borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.divider, width: 1)),
-          child: GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 7,
-            mainAxisSpacing: 3,
-            crossAxisSpacing: 3,
-            children: List.generate(7, (i) {
-              final d = _schedule.isNotEmpty && i < _schedule.length ? _schedule[i] : null;
-              final active = d != null && d['status'] == 'planned';
-              final done = d != null && d['status'] == 'completed';
-              final rest = d != null && d['status'] == 'rest_day';
-              return Column(
+    const labels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+    return SizedBox(
+      height: 78 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: 7,
+        separatorBuilder: (_, _) => SizedBox(width: 8),
+        itemBuilder: (_, index) {
+          final day = index < _schedule.length ? _schedule[index] : null;
+          final status = day?['status'] as String?;
+          final active = status == 'planned' || status == 'in_progress';
+          final done = status == 'completed';
+          final date = DateTime.tryParse(day?['date'] as String? ?? '');
+          final isToday = date != null && _isSameDay(date, AppClock.now());
+          final isPast = date != null && _isPastDay(date);
+          return InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: day == null || day['isRest'] == true
+                ? null
+                : () => _openDay(day),
+            child: Container(
+              width: 48,
+              padding: EdgeInsets.symmetric(vertical: 7),
+              decoration: BoxDecoration(
+                color: isToday
+                    ? AppColors.primary.withValues(alpha: .28)
+                    : isPast
+                    ? AppColors.surface.withValues(alpha: .55)
+                    : active
+                    ? AppColors.primary.withValues(alpha: .1)
+                    : AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isToday
+                      ? AppColors.primary
+                      : done
+                      ? AppColors.primary
+                      : AppColors.divider,
+                  width: isToday ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(labels[i], style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? AppColors.primary : AppColors.textMuted)),
-                  const SizedBox(height: 4),
-                  GestureDetector(
-                    onTap: () {},
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: done
-                            ? AppColors.primary
-                            : active
-                                ? AppColors.primary.withOpacity(0.5)
-                                : rest
-                                    ? AppColors.textMuted.withOpacity(0.2)
-                                    : Colors.transparent,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          d != null ? (d['date'] as String).substring(8, 10) : (i + 25).toString(),
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: done ? AppColors.textInverse : AppColors.textPrimary),
-                        ),
-                      ),
+                  LocalizedText(
+                    labels[index],
+                    style: AppTextTheme.caption.copyWith(
+                      color: isPast
+                          ? AppColors.textMuted.withValues(alpha: .55)
+                          : active || done || isToday
+                          ? AppColors.primary
+                          : AppColors.textMuted,
                     ),
                   ),
-                ],
-              );
-            }),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _dayCard(Map<String, dynamic> d) {
-    final isRest = d['isRest'] == true;
-    final status = d['status'] as String;
-    final completed = status == 'completed';
-
-    return GestureDetector(
-      onTap: isRest ? null : () => Navigator.pushNamed(context, '/session', arguments: d),
-      child: Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 14),
-        decoration: BoxDecoration(
-          color: completed ? AppColors.surface : AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: completed ? AppColors.primary : AppColors.divider,
-            width: completed ? 1.5 : 1,
-          ),
-          boxShadow: const [BoxShadow(color: AppColors.shadow, blurRadius: 16, offset: Offset(0, 6))],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: completed ? AppColors.primary : AppColors.divider,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Icon(
-                        completed ? Icons.check_rounded : Icons.fitness_center_rounded,
-                        color: completed ? AppColors.textInverse : AppColors.primary,
-                        size: 20,
-                      ),
+                  SizedBox(height: 4),
+                  LocalizedText(
+                    '${date?.day ?? index + 1}',
+                    style: AppTextTheme.labelLarge.copyWith(
+                      color: isPast
+                          ? AppColors.textMuted.withValues(alpha: .55)
+                          : done || isToday
+                          ? AppColors.primary
+                          : AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(d['dayName'] as String, style: AppTextTheme.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: isRest ? null : () => _cycleStatus(d),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(color: _statusColor(status).withOpacity(0.15), borderRadius: BorderRadius.circular(6)),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(_statusLabel(status), style: TextStyle(fontSize: 10, color: _statusColor(status), fontWeight: FontWeight.w700, letterSpacing: 0.3)),
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.edit, size: 10, color: AppColors.textMuted),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        if (isRest)
-                          Text('Ngày nghỉ phục hồi', style: AppTextTheme.bodySmall.copyWith(color: AppColors.textSecondary))
-                        else
-                          Text('${d['exerciseCount']} bài tập · ${_statusLabel(status)}', style: AppTextTheme.bodySmall.copyWith(color: AppColors.textSecondary)),
-                      ],
-                    ),
-                  ),
-                  if (!isRest) const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 18),
                 ],
               ),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _dayCard(Map<String, dynamic> day) {
+    final isRest = day['isRest'] == true;
+    final status = day['status'] as String? ?? 'planned';
+    final done = status == 'completed';
+    final date = DateTime.tryParse(day['date'] as String? ?? '');
+    final isPast = date != null && _isPastDay(date);
+    final isToday = date != null && _isSameDay(date, AppClock.now());
+    final color = isRest
+        ? AppColors.textMuted
+        : done
+        ? AppColors.primary
+        : AppColors.secondary;
+    return Material(
+      color: isPast
+          ? AppColors.surfaceElevated.withValues(alpha: .55)
+          : AppColors.surfaceElevated,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: isRest ? null : () => _openDay(day),
+        borderRadius: BorderRadius.circular(22),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  isRest
+                      ? Icons.bedtime_outlined
+                      : done
+                      ? Icons.check_rounded
+                      : Icons.fitness_center_rounded,
+                  color: color,
+                ),
+              ),
+              SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LocalizedText(
+                      day['dayName'] as String? ?? '',
+                      style: AppTextTheme.titleMedium,
+                    ),
+                    SizedBox(height: 6),
+                    LocalizedText(
+                      isRest
+                          ? 'Ngày nghỉ và phục hồi'
+                          : '${day['exerciseCount'] ?? 0} bài tập',
+                      style: AppTextTheme.bodySmall,
+                    ),
+                    if (!isRest) ...[
+                      SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: isPast ? null : () => _cycleStatus(day),
+                        child: _statusPill(
+                          _statusIcon(status),
+                          _statusLabel(status),
+                          color,
+                        ),
+                      ),
+                    ],
+                    if (isToday) ...[
+                      SizedBox(height: 7),
+                      LocalizedText(
+                        'Hôm nay',
+                        style: AppTextTheme.caption.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                    if (isPast) ...[
+                      SizedBox(height: 7),
+                      LocalizedText(
+                        'Chỉ xem - ngày đã qua',
+                        style: AppTextTheme.caption.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (!isRest)
+                Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Future<void> _cycleStatus(Map<String, dynamic> d) async {
-    final status = d['status'] as String;
-    String next;
-    if (status == 'planned') next = 'in_progress';
-    else if (status == 'in_progress') next = 'completed';
-    else next = 'planned';
-    await WorkoutScheduleRepository.setStatus(d['id'] as String, next);
+  Future<void> _openSession(Map<String, dynamic> day) async {
+    await Navigator.pushNamed(context, '/session', arguments: day);
     if (!mounted) return;
-    setState(() {
-      final idx = _schedule.indexWhere((e) => e['id'] == d['id']);
-      if (idx >= 0) _schedule[idx]['status'] = next;
-    });
+    setState(() => _schedule = WorkoutScheduleRepository.loadSchedule());
   }
+
+  Future<void> _openDay(Map<String, dynamic> day) async {
+    final date = DateTime.tryParse(day['date'] as String? ?? '');
+    if (date == null || !_isPastDay(date)) {
+      await _openSession(day);
+      return;
+    }
+    final exercises = (day['exercises'] as List? ?? []);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surfaceElevated,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 4, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LocalizedText(
+                'Lịch ngày ${date.day}/${date.month}/${date.year}',
+                style: AppTextTheme.headlineMedium,
+              ),
+              SizedBox(height: 6),
+              LocalizedText(
+                'Ngày đã qua nên nội dung được khóa và chỉ có thể xem.',
+                style: AppTextTheme.bodySmall,
+              ),
+              SizedBox(height: 16),
+              if (exercises.isEmpty)
+                LocalizedText(
+                  'Ngày nghỉ và phục hồi',
+                  style: AppTextTheme.bodyLarge,
+                )
+              else
+                ...exercises.map((raw) {
+                  final item = Map<String, dynamic>.from(raw as Map);
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.fitness_center_rounded),
+                    title: LocalizedText(item['exerciseName'] as String? ?? ''),
+                    subtitle: LocalizedText(
+                      '${item['sets'] ?? 0} hiệp × ${item['reps'] ?? 0} lần',
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  bool _isPastDay(DateTime date) {
+    final today = AppClock.now();
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+    ).isBefore(DateTime(today.year, today.month, today.day));
+  }
+
+  Future<void> _cycleStatus(Map<String, dynamic> day) async {
+    final status = day['status'] as String? ?? 'planned';
+    final next = status == 'planned'
+        ? 'in_progress'
+        : status == 'in_progress'
+        ? 'completed'
+        : 'planned';
+    await WorkoutScheduleRepository.setStatus(day['id'] as String, next);
+    if (!mounted) return;
+    setState(() => day['status'] = next);
+  }
+
+  Widget _statusPill(IconData icon, String label, Color color) => Container(
+    padding: EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .12),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: color),
+        SizedBox(width: 5),
+        Flexible(
+          child: LocalizedText(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextTheme.caption.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  String _statusLabel(String status) => switch (status) {
+    'completed' => 'Hoàn thành',
+    'in_progress' => 'Đang tập',
+    _ => 'Đã lên lịch',
+  };
+  IconData _statusIcon(String status) => switch (status) {
+    'completed' => Icons.check_circle_outline_rounded,
+    'in_progress' => Icons.timelapse_rounded,
+    _ => Icons.event_available_rounded,
+  };
 }

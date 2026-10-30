@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+
+import '../services/app_localization.dart';
+
 import '../theme/app_theme.dart';
 import '../widgets/modern_components.dart';
 import '../models/data_models.dart';
 import '../services/storage_service.dart';
-import 'goal_screen.dart';
-import 'level_screen.dart';
+import '../services/cloud_sync_service.dart';
+import '../services/supabase_service.dart';
+import '../services/guidance_service.dart';
+import '../repositories/workout_plan_repository.dart';
+import '../repositories/workout_schedule_repository.dart';
+import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -18,25 +25,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _ageCtrl = TextEditingController();
   final _heightCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
+  final _occupationCtrl = TextEditingController();
+  final _healthNotesCtrl = TextEditingController();
 
   String _gender = 'Nam';
   String _goal = 'muscle';
   String _level = 'beginner';
   int _sessions = 4;
+  String _activityLevel = 'moderate';
+  Set<int> _availableWeekdays = {1, 3, 5};
+  String _preferredWorkoutTime = 'evening';
+  String _dietaryPreference = 'balanced';
   bool _editing = false;
 
   String _goalLabel(String g) {
     switch (g) {
-      case 'muscle': return 'Tăng cơ';
-      case 'fatloss': return 'Giảm mỡ';
-      default: return 'Duy trì thể lực';
+      case 'muscle':
+        return 'Tăng cơ';
+      case 'fatloss':
+        return 'Giảm mỡ';
+      default:
+        return 'Duy trì thể lực';
     }
   }
 
   String _levelLabel(String l) {
     switch (l) {
-      case 'beginner': return 'Mới bắt đầu';
-      default: return 'Có kinh nghiệm';
+      case 'beginner':
+        return 'Mới bắt đầu';
+      default:
+        return 'Có kinh nghiệm';
     }
   }
 
@@ -46,11 +64,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _ageCtrl.dispose();
+    _heightCtrl.dispose();
+    _weightCtrl.dispose();
+    _occupationCtrl.dispose();
+    _healthNotesCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final p = StorageService.instance.loadProfile();
-    final goal = StorageService.instance.loadGoal() ?? 'muscle';
-    final level = StorageService.instance.loadLevel() ?? 'beginner';
-    final sessions = StorageService.instance.loadSessionsPerWeek() ?? 4;
+    final goal = p?.goal ?? StorageService.instance.loadGoal() ?? 'muscle';
+    final level =
+        p?.experienceLevel ?? StorageService.instance.loadLevel() ?? 'beginner';
+    final sessions =
+        p?.sessionsPerWeek ??
+        StorageService.instance.loadSessionsPerWeek() ??
+        3;
     if (!mounted) return;
     setState(() {
       if (p != null) {
@@ -59,6 +92,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _heightCtrl.text = p.height.toString();
         _weightCtrl.text = p.weight.toString();
         _gender = p.gender;
+        _occupationCtrl.text = p.occupation;
+        _activityLevel = p.activityLevel;
+        _availableWeekdays = p.availableWeekdays.toSet();
+        _preferredWorkoutTime = p.preferredWorkoutTime;
+        _dietaryPreference = p.dietaryPreference;
+        _healthNotesCtrl.text = p.healthNotes;
       }
       _goal = goal;
       _level = level;
@@ -87,27 +126,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _save() async {
+    final age = int.tryParse(_ageCtrl.text);
+    final height = double.tryParse(_heightCtrl.text.replaceAll(',', '.'));
+    final weight = double.tryParse(_weightCtrl.text.replaceAll(',', '.'));
+    if (_nameCtrl.text.trim().isEmpty ||
+        age == null ||
+        age < 18 ||
+        age > 100 ||
+        height == null ||
+        !height.isFinite ||
+        height < 100 ||
+        height > 250 ||
+        weight == null ||
+        !weight.isFinite ||
+        weight < 20 ||
+        weight > 400 ||
+        _availableWeekdays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: LocalizedText(
+            'Vui lòng nhập đầy đủ và kiểm tra lại thông tin thể trạng.',
+          ),
+        ),
+      );
+      return;
+    }
     final p = UserProfile(
       name: _nameCtrl.text,
-      age: int.tryParse(_ageCtrl.text) ?? 22,
-      height: double.tryParse(_heightCtrl.text) ?? 170.0,
-      weight: double.tryParse(_weightCtrl.text) ?? 65.0,
+      age: age,
+      height: height,
+      weight: weight,
       gender: _gender,
       goal: _goal,
       experienceLevel: _level,
       sessionsPerWeek: _sessions,
+      occupation: _occupationCtrl.text.trim(),
+      activityLevel: _activityLevel,
+      availableWeekdays: _availableWeekdays.toList()..sort(),
+      preferredWorkoutTime: _preferredWorkoutTime,
+      dietaryPreference: _dietaryPreference,
+      healthNotes: _healthNotesCtrl.text.trim(),
     );
     await StorageService.instance.saveProfile(p);
     await StorageService.instance.saveGoal(_goal);
     await StorageService.instance.saveLevel(_level);
     await StorageService.instance.saveSessionsPerWeek(_sessions);
-    if (!mounted) return;
+    await WorkoutScheduleRepository.updateFutureSchedule(
+      WorkoutPlanRepository.generatePlan(
+        p.goal,
+        p.experienceLevel,
+        p.sessionsPerWeek,
+        availableWeekdays: p.availableWeekdays,
+        profile: p,
+      ),
+    );
+    await CloudSyncService.instance.syncNow();
+    if (!mounted || !context.mounted) return;
     setState(() => _editing = false);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu hồ sơ')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: LocalizedText('Đã lưu hồ sơ')));
   }
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
     final b = _bmi();
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -116,11 +198,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: 'Hồ sơ cá nhân',
         centerTitle: false,
         actions: [
+          IconButton(
+            tooltip: tr('Cài đặt'),
+            icon: Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => SettingsScreen()),
+            ),
+          ),
           Container(
-            margin: const EdgeInsets.only(right: 12),
+            margin: EdgeInsets.only(right: 12),
             child: IconButton(
-              icon: Icon(_editing ? Icons.check_rounded : Icons.edit_rounded, color: AppColors.primary),
-              onPressed: _editing ? _save : () => setState(() => _editing = true),
+              icon: Icon(
+                _editing ? Icons.check_rounded : Icons.edit_rounded,
+                color: AppColors.primary,
+              ),
+              onPressed: _editing
+                  ? _save
+                  : () => setState(() => _editing = true),
             ),
           ),
         ],
@@ -130,8 +225,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Expanded(
               child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                physics: BouncingScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(20, 16, 20, 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -145,10 +240,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               gradient: AppGradients.primary,
                               shape: BoxShape.circle,
                               boxShadow: [
-                                BoxShadow(color: AppColors.primary.withOpacity(0.5), blurRadius: 20, offset: const Offset(0, 8)),
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                  blurRadius: 20,
+                                  offset: Offset(0, 8),
+                                ),
                               ],
                             ),
-                            child: const Icon(Icons.person_rounded, color: AppColors.textInverse, size: 40),
+                            child: Icon(
+                              Icons.person_rounded,
+                              color: AppColors.textInverse,
+                              size: 40,
+                            ),
                           ),
                           Positioned(
                             bottom: 0,
@@ -156,54 +261,98 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             child: Container(
                               width: 32,
                               height: 32,
-                              decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle, border: Border.all(color: AppColors.background, width: 3)),
-                              child: const Icon(Icons.edit_rounded, color: AppColors.textInverse, size: 16),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: AppColors.background,
+                                  width: 3,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.edit_rounded,
+                                color: AppColors.textInverse,
+                                size: 16,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                     Center(
-                      child: Text(
+                      child: LocalizedText(
                         _nameCtrl.text.isEmpty ? 'Bạn' : _nameCtrl.text,
                         style: AppTextTheme.headlineLarge,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: 6),
                     Center(
-                      child: Text(
+                      child: LocalizedText(
                         'Thành viên FitPlan',
-                        style: AppTextTheme.bodySmall.copyWith(color: AppColors.textSecondary),
+                        style: AppTextTheme.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: 24),
 
                     SectionHeader(title: 'Thông tin cơ bản'),
-                    const SizedBox(height: 14),
-                    _field(label: 'Họ và tên', ctrl: _nameCtrl, hint: 'Nhập tên của bạn', enabled: _editing),
-                    const SizedBox(height: 14),
+                    SizedBox(height: 14),
+                    _field(
+                      label: 'Họ và tên',
+                      ctrl: _nameCtrl,
+                      hint: 'Nhập tên của bạn',
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 14),
                     Row(
                       children: [
-                        Expanded(child: _field(label: 'Tuổi', ctrl: _ageCtrl, hint: 'tuổi', enabled: _editing, keyboard: TextInputType.number)),
-                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _field(
+                            label: 'Tuổi',
+                            ctrl: _ageCtrl,
+                            hint: 'tuổi',
+                            enabled: _editing,
+                            keyboard: TextInputType.number,
+                          ),
+                        ),
+                        SizedBox(width: 12),
                         Expanded(child: _genderSelector(enabled: _editing)),
                       ],
                     ),
-                    const SizedBox(height: 14),
+                    SizedBox(height: 14),
                     Row(
                       children: [
-                        Expanded(child: _field(label: 'Chiều cao (cm)', ctrl: _heightCtrl, hint: 'cm', enabled: _editing, keyboard: TextInputType.number, suffix: 'cm')),
-                        const SizedBox(width: 12),
-                        Expanded(child: _field(label: 'Cân nặng (kg)', ctrl: _weightCtrl, hint: 'kg', enabled: _editing, keyboard: TextInputType.number, suffix: 'kg')),
+                        Expanded(
+                          child: _field(
+                            label: 'Chiều cao (cm)',
+                            ctrl: _heightCtrl,
+                            hint: 'cm',
+                            enabled: _editing,
+                            keyboard: TextInputType.number,
+                            suffix: 'cm',
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: _field(
+                            label: 'Cân nặng (kg)',
+                            ctrl: _weightCtrl,
+                            hint: 'kg',
+                            enabled: _editing,
+                            keyboard: TextInputType.number,
+                            suffix: 'kg',
+                          ),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 20),
+                    SizedBox(height: 20),
 
                     SectionHeader(title: 'Chỉ số BMI'),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     GlassCard(
-                      padding: const EdgeInsets.all(20),
+                      padding: EdgeInsets.all(20),
                       borderRadius: 20,
                       color: AppColors.surfaceElevated,
                       child: Column(
@@ -214,54 +363,200 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               Container(
                                 width: 40,
                                 height: 40,
-                                decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
-                                child: const Icon(Icons.fitness_center_rounded, color: AppColors.primary, size: 20),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.15,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.fitness_center_rounded,
+                                  color: AppColors.primary,
+                                  size: 20,
+                                ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(child: Text('Chỉ số khối cơ thể', style: AppTextTheme.labelLarge.copyWith(fontWeight: FontWeight.w700))),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: LocalizedText(
+                                  'Chỉ số khối cơ thể',
+                                  style: AppTextTheme.labelLarge.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
-                          const SizedBox(height: 14),
+                          SizedBox(height: 14),
                           Row(
                             children: [
-                              Text(b.toStringAsFixed(1), style: AppTextTheme.displayLarge.copyWith(fontSize: 34, color: _bmiColor(b), fontWeight: FontWeight.w800)),
-                              const SizedBox(width: 10),
-                              Text(_bmiLabel(b), style: AppTextTheme.labelLarge.copyWith(fontWeight: FontWeight.w700, color: _bmiColor(b))),
+                              LocalizedText(
+                                b.toStringAsFixed(1),
+                                style: AppTextTheme.displayLarge.copyWith(
+                                  fontSize: 34,
+                                  color: _bmiColor(b),
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              SizedBox(width: 10),
+                              LocalizedText(
+                                _bmiLabel(b),
+                                style: AppTextTheme.labelLarge.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: _bmiColor(b),
+                                ),
+                              ),
                             ],
                           ),
-                          const SizedBox(height: 10),
-                          DividerLine(margin: const EdgeInsets.symmetric(vertical: 10)),
-                          Text(
+                          SizedBox(height: 10),
+                          DividerLine(
+                            margin: EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          LocalizedText(
                             '18.5 - 24.9: Bình thường   >25: Thừa cân   <18.5: Gầy',
-                            style: AppTextTheme.caption.copyWith(color: AppColors.textMuted),
+                            style: AppTextTheme.caption.copyWith(
+                              color: AppColors.textMuted,
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    SizedBox(height: 20),
 
                     SectionHeader(title: 'Mục tiêu & Lịch trình'),
-                    const SizedBox(height: 12),
-                    _choiceCard('Mục tiêu', _goalLabel(_goal), Icons.fitness_center_rounded, () => _pickGoal(), enabled: _editing),
-                    const SizedBox(height: 10),
-                    _choiceCard('Trình độ', _levelLabel(_level), Icons.speed_rounded, () => _pickLevel(), enabled: _editing),
-                    const SizedBox(height: 10),
-                    _choiceCard('Số buổi tập/tuần', '$_sessions buổi', Icons.calendar_today_rounded, () => _pickSessions(), enabled: _editing),
-                    const SizedBox(height: 26),
+                    SizedBox(height: 12),
+                    _choiceCard(
+                      'Mục tiêu',
+                      _goalLabel(_goal),
+                      Icons.fitness_center_rounded,
+                      () => _pickGoal(),
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 10),
+                    _choiceCard(
+                      'Trình độ',
+                      _levelLabel(_level),
+                      Icons.speed_rounded,
+                      () => _pickLevel(),
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 10),
+                    _choiceCard(
+                      'Số buổi tập/tuần',
+                      '$_sessions buổi',
+                      Icons.calendar_today_rounded,
+                      () => _pickSessions(),
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 24),
+                    SectionHeader(title: 'Dữ liệu cá nhân hóa'),
+                    SizedBox(height: 8),
+                    LocalizedText(
+                      'Các thông tin này giúp lịch tập phù hợp với công việc, thời gian rảnh và khả năng hồi phục của bạn.',
+                      style: AppTextTheme.bodySmall,
+                    ),
+                    SizedBox(height: 14),
+                    _field(
+                      label: 'Công việc hoặc nghề nghiệp',
+                      ctrl: _occupationCtrl,
+                      hint: 'Ví dụ: nhân viên văn phòng',
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 10),
+                    _choiceCard(
+                      'Mức vận động trong ngày',
+                      _activityLabel(_activityLevel),
+                      Icons.directions_walk_rounded,
+                      _pickActivityLevel,
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 10),
+                    _choiceCard(
+                      'Khung giờ tập phù hợp',
+                      _timeLabel(_preferredWorkoutTime),
+                      Icons.schedule_rounded,
+                      _pickPreferredTime,
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 10),
+                    _choiceCard(
+                      'Chế độ ăn',
+                      _dietLabel(_dietaryPreference),
+                      Icons.restaurant_rounded,
+                      _pickDiet,
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 14),
+                    LocalizedText(
+                      'Ngày có thể tập',
+                      style: AppTextTheme.labelLarge,
+                    ),
+                    SizedBox(height: 8),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: List.generate(7, (index) {
+                        const names = [
+                          'T2',
+                          'T3',
+                          'T4',
+                          'T5',
+                          'T6',
+                          'T7',
+                          'CN',
+                        ];
+                        final day = index + 1;
+                        return FilterChip(
+                          selected: _availableWeekdays.contains(day),
+                          label: LocalizedText(names[index]),
+                          onSelected: _editing
+                              ? (selected) => setState(() {
+                                  selected
+                                      ? _availableWeekdays.add(day)
+                                      : _availableWeekdays.remove(day);
+                                })
+                              : null,
+                        );
+                      }),
+                    ),
+                    SizedBox(height: 14),
+                    _field(
+                      label: 'Lưu ý sức khỏe hoặc chấn thương',
+                      ctrl: _healthNotesCtrl,
+                      hint: 'Để trống nếu không có',
+                      enabled: _editing,
+                    ),
+                    SizedBox(height: 18),
+                    _guidanceCard(),
+                    SizedBox(height: 20),
+                    _cloudCard(),
+                    SizedBox(height: 12),
+                    SizedBox(height: 26),
                   ],
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 24),
               child: GradientButton(
-                onPressed: _save,
+                onPressed: _editing
+                    ? _save
+                    : () => setState(() => _editing = true),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(_editing ? 'Lưu hồ sơ' : 'Chỉnh sửa', style: AppTextTheme.labelLarge.copyWith(fontWeight: FontWeight.w700, color: AppColors.textInverse)),
-                    const SizedBox(width: 8),
-                    Icon(_editing ? Icons.save_rounded : Icons.edit_rounded, size: 20, color: AppColors.textInverse),
+                    LocalizedText(
+                      _editing ? 'Lưu hồ sơ' : 'Chỉnh sửa',
+                      style: AppTextTheme.labelLarge.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textInverse,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Icon(
+                      _editing ? Icons.save_rounded : Icons.edit_rounded,
+                      size: 20,
+                      color: AppColors.textInverse,
+                    ),
                   ],
                 ),
               ),
@@ -269,33 +564,155 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: const ModernBottomNav(currentIndex: 4, onTap: null),
     );
   }
 
-  Widget _field({required String label, required TextEditingController ctrl, String? hint, bool enabled = false, TextInputType? keyboard, String? suffix}) {
+  Widget _cloudCard() {
+    final configured = SupabaseService.isConfigured;
+    final user = SupabaseService.currentUser;
+    return Container(
+      padding: EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: configured
+              ? AppColors.primary.withValues(alpha: .35)
+              : AppColors.divider,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                configured ? Icons.cloud_done_outlined : Icons.phone_android,
+                color: configured ? AppColors.primary : AppColors.secondary,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: LocalizedText(
+                  configured ? 'Đồng bộ Supabase' : 'Chế độ dữ liệu cục bộ',
+                  style: AppTextTheme.titleMedium,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 7),
+          LocalizedText(
+            configured ? (user?.email ?? 'Tài khoản đã đăng nhập') : 'App vẫn dùng được đầy đủ. Thêm SUPABASE_URL và SUPABASE_ANON_KEY để bật tài khoản và đồng bộ.',
+            style: AppTextTheme.bodySmall,
+          ),
+          if (configured) ...[
+            SizedBox(height: 14),
+            ValueListenableBuilder<bool>(
+              valueListenable: CloudSyncService.instance.syncing,
+              builder: (context, syncing, _) => Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: syncing
+                          ? null
+                          : () async {
+                              final success = await CloudSyncService.instance
+                                  .syncNow();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: LocalizedText(
+                                    success
+                                        ? 'Đã đồng bộ dữ liệu lên Supabase'
+                                        : 'Chưa thể đồng bộ. Kiểm tra migration và kết nối.',
+                                  ),
+                                ),
+                              );
+                            },
+                      icon: syncing
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(Icons.sync_rounded),
+                      label: LocalizedText(
+                        syncing ? 'Đang đồng bộ' : 'Đồng bộ ngay',
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  IconButton(
+                    tooltip: tr('Đăng xuất'),
+                    onPressed: SupabaseService.signOut,
+                    icon: Icon(Icons.logout_rounded),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _field({
+    required String label,
+    required TextEditingController ctrl,
+    String? hint,
+    bool enabled = false,
+    TextInputType? keyboard,
+    String? suffix,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppTextTheme.labelLarge.copyWith(color: AppColors.textSecondary)),
-        const SizedBox(height: 8),
+        LocalizedText(
+          label,
+          style: AppTextTheme.labelLarge.copyWith(
+            color: AppColors.textSecondary,
+          ),
+        ),
+        SizedBox(height: 8),
         SizedBox(
           height: 50,
           child: TextField(
             controller: ctrl,
             enabled: enabled,
             keyboardType: keyboard,
-            style: const TextStyle(fontFamily: AppTextTheme.font, fontSize: 15, color: AppColors.textPrimary),
+            style: TextStyle(
+              fontFamily: AppTextTheme.font,
+              fontSize: 15,
+              color: AppColors.textPrimary,
+            ),
             decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(fontFamily: AppTextTheme.font, fontSize: 14, color: AppColors.textMuted),
+              hintText: hint == null ? null : tr(hint),
+              hintStyle: TextStyle(
+                fontFamily: AppTextTheme.font,
+                fontSize: 14,
+                color: AppColors.textMuted,
+              ),
               suffixText: suffix,
-              suffixStyle: const TextStyle(fontFamily: AppTextTheme.font, fontSize: 13, color: AppColors.textMuted),
+              suffixStyle: TextStyle(
+                fontFamily: AppTextTheme.font,
+                fontSize: 13,
+                color: AppColors.textMuted,
+              ),
               filled: true,
-              fillColor: enabled ? AppColors.surfaceElevated : AppColors.surface.withOpacity(0.6),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              fillColor: enabled
+                  ? AppColors.surfaceElevated
+                  : AppColors.surface.withValues(alpha: 0.6),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+              ),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 14,
+              ),
             ),
           ),
         ),
@@ -307,21 +724,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Giới tính', style: TextStyle(fontFamily: AppTextTheme.font, fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-        const SizedBox(height: 8),
+        LocalizedText(
+          'Giới tính',
+          style: TextStyle(
+            fontFamily: AppTextTheme.font,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(color: AppColors.surfaceElevated, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.divider, width: 1)),
+          padding: EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.divider, width: 1),
+          ),
           child: SegmentedButton<String>(
             selected: {_gender},
-            onSelectionChanged: enabled ? (s) => setState(() => _gender = s.first) : null,
+            onSelectionChanged: enabled
+                ? (s) => setState(() => _gender = s.first)
+                : null,
             style: SegmentedButton.styleFrom(
               backgroundColor: AppColors.surfaceElevated,
-              selectedBackgroundColor: AppColors.primary.withOpacity(0.2),
+              selectedBackgroundColor: AppColors.primary.withValues(alpha: 0.2),
             ),
-            segments: const [
-              ButtonSegment(value: 'Nam', label: Text('Nam', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold))),
-              ButtonSegment(value: 'Nữ', label: Text('Nữ', style: TextStyle(color: AppColors.textPrimary))),
+            segments: [
+              ButtonSegment(
+                value: 'Nam',
+                label: LocalizedText(
+                  'Nam',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              ButtonSegment(
+                value: 'Nữ',
+                label: LocalizedText(
+                  'Nữ',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
+              ),
             ],
           ),
         ),
@@ -329,9 +775,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _choiceCard(String label, String value, IconData icon, VoidCallback onTap, {bool enabled = false}) {
+  Widget _choiceCard(
+    String label,
+    String value,
+    IconData icon,
+    VoidCallback onTap, {
+    bool enabled = false,
+  }) {
     return GlassCard(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       borderRadius: 16,
       color: AppColors.surfaceElevated,
       child: Row(
@@ -339,17 +791,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Container(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Icon(icon, color: AppColors.primary, size: 20),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: AppTextTheme.bodySmall.copyWith(color: AppColors.textSecondary)),
-                const SizedBox(height: 2),
-                Text(value, style: AppTextTheme.titleMedium.copyWith(fontWeight: FontWeight.w700)),
+                LocalizedText(
+                  label,
+                  style: AppTextTheme.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                SizedBox(height: 2),
+                LocalizedText(
+                  value,
+                  style: AppTextTheme.titleMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
@@ -357,9 +822,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
             GestureDetector(
               onTap: onTap,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-                child: const Text('Đổi', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: LocalizedText(
+                  'Đổi',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
         ],
@@ -368,34 +843,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _pickGoal() {
-    final items = {'muscle': 'Tăng cơ', 'fatloss': 'Giảm mỡ', 'maintenance': 'Duy trì thể lực'};
+    final items = {
+      'muscle': 'Tăng cơ',
+      'fatloss': 'Giảm mỡ',
+      'maintenance': 'Duy trì thể lực',
+    };
     showDialog(
       context: context,
       builder: (c) => Dialog(
         backgroundColor: AppColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Chọn mục tiêu', style: AppTextTheme.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 16),
-              ...items.entries.map((e) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(color: _goal == e.key ? AppColors.primary : Colors.transparent, borderRadius: BorderRadius.circular(8)),
-                      child: Icon(Icons.radio_button_checked, color: _goal == e.key ? AppColors.textInverse : AppColors.textMuted, size: 18),
+              LocalizedText(
+                'Chọn mục tiêu',
+                style: AppTextTheme.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: 16),
+              ...items.entries.map(
+                (e) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: _goal == e.key
+                          ? AppColors.primary
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    title: Text(e.value, style: const TextStyle(fontFamily: AppTextTheme.font, fontSize: 15, color: AppColors.textPrimary)),
-                    onTap: () {
-                      setState(() => _goal = e.key);
-                      Navigator.pop(c);
-                    },
-                  )),
+                    child: Icon(
+                      Icons.radio_button_checked,
+                      color: _goal == e.key
+                          ? AppColors.textInverse
+                          : AppColors.textMuted,
+                      size: 18,
+                    ),
+                  ),
+                  title: LocalizedText(
+                    e.value,
+                    style: TextStyle(
+                      fontFamily: AppTextTheme.font,
+                      fontSize: 15,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  onTap: () {
+                    setState(() => _goal = e.key);
+                    Navigator.pop(c);
+                  },
+                ),
+              ),
             ],
           ),
         ),
@@ -411,27 +915,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: AppColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Chọn trình độ', style: AppTextTheme.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 16),
-              ...items.entries.map((e) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(color: _level == e.key ? AppColors.primary : Colors.transparent, borderRadius: BorderRadius.circular(8)),
-                      child: Icon(Icons.radio_button_checked, color: _level == e.key ? AppColors.textInverse : AppColors.textMuted, size: 18),
+              LocalizedText(
+                'Chọn trình độ',
+                style: AppTextTheme.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: 16),
+              ...items.entries.map(
+                (e) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: _level == e.key
+                          ? AppColors.primary
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    title: Text(e.value, style: const TextStyle(fontFamily: AppTextTheme.font, fontSize: 15, color: AppColors.textPrimary)),
-                    onTap: () {
-                      setState(() => _level = e.key);
-                      Navigator.pop(c);
-                    },
-                  )),
+                    child: Icon(
+                      Icons.radio_button_checked,
+                      color: _level == e.key
+                          ? AppColors.textInverse
+                          : AppColors.textMuted,
+                      size: 18,
+                    ),
+                  ),
+                  title: LocalizedText(
+                    e.value,
+                    style: TextStyle(
+                      fontFamily: AppTextTheme.font,
+                      fontSize: 15,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  onTap: () {
+                    setState(() => _level = e.key);
+                    Navigator.pop(c);
+                  },
+                ),
+              ),
             ],
           ),
         ),
@@ -446,13 +975,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: AppColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Số buổi tập/tuần', style: AppTextTheme.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 16),
+              LocalizedText(
+                'Số buổi tập/tuần',
+                style: AppTextTheme.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: 16),
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
@@ -465,13 +999,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Navigator.pop(c);
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: active ? AppColors.primary : AppColors.surface,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: active ? AppColors.primary : AppColors.divider, width: 1),
+                        border: Border.all(
+                          color: active ? AppColors.primary : AppColors.divider,
+                          width: 1,
+                        ),
                       ),
-                      child: Text('$d buổi', style: TextStyle(fontFamily: AppTextTheme.font, fontSize: 14, fontWeight: FontWeight.w600, color: active ? AppColors.textInverse : AppColors.textSecondary)),
+                      child: LocalizedText(
+                        '$d buổi',
+                        style: TextStyle(
+                          fontFamily: AppTextTheme.font,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: active
+                              ? AppColors.textInverse
+                              : AppColors.textSecondary,
+                        ),
+                      ),
                     ),
                   );
                 }),
@@ -479,6 +1029,160 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  String _activityLabel(String value) => switch (value) {
+    'sedentary' => 'Ít vận động / ngồi nhiều',
+    'active' => 'Vận động nhiều',
+    _ => 'Vận động vừa',
+  };
+
+  String _timeLabel(String value) => switch (value) {
+    'morning' => 'Buổi sáng',
+    'afternoon' => 'Buổi chiều',
+    _ => 'Buổi tối',
+  };
+
+  String _dietLabel(String value) => switch (value) {
+    'vegetarian' => 'Ăn chay',
+    'low_carb' => 'Giảm tinh bột',
+    _ => 'Cân bằng',
+  };
+
+  void _pickActivityLevel() =>
+      _pickOption('Mức vận động trong ngày', _activityLevel, {
+        'sedentary': 'Ít vận động / ngồi nhiều',
+        'moderate': 'Vận động vừa',
+        'active': 'Vận động nhiều',
+      }, (value) => setState(() => _activityLevel = value));
+
+  void _pickPreferredTime() => _pickOption(
+    'Khung giờ tập phù hợp',
+    _preferredWorkoutTime,
+    {'morning': 'Buổi sáng', 'afternoon': 'Buổi chiều', 'evening': 'Buổi tối'},
+    (value) => setState(() => _preferredWorkoutTime = value),
+  );
+
+  void _pickDiet() => _pickOption('Chế độ ăn', _dietaryPreference, {
+    'balanced': 'Cân bằng',
+    'vegetarian': 'Ăn chay',
+    'low_carb': 'Giảm tinh bột',
+  }, (value) => setState(() => _dietaryPreference = value));
+
+  Future<void> _pickOption(
+    String title,
+    String current,
+    Map<String, String> items,
+    ValueChanged<String> onChanged,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: LocalizedText(title),
+        content: RadioGroup<String>(
+          groupValue: current,
+          onChanged: (value) {
+            if (value != null) {
+              onChanged(value);
+              Navigator.pop(dialogContext);
+            }
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: items.entries
+                .map(
+                  (entry) => RadioListTile<String>(
+                    value: entry.key,
+                    title: LocalizedText(entry.value),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _guidanceCard() {
+    final profile = UserProfile(
+      name: _nameCtrl.text,
+      age: int.tryParse(_ageCtrl.text) ?? 22,
+      height: double.tryParse(_heightCtrl.text) ?? 170,
+      weight: double.tryParse(_weightCtrl.text) ?? 65,
+      gender: _gender,
+      goal: _goal,
+      experienceLevel: _level,
+      sessionsPerWeek: _sessions,
+      occupation: _occupationCtrl.text,
+      activityLevel: _activityLevel,
+      availableWeekdays: _availableWeekdays.toList(),
+      preferredWorkoutTime: _preferredWorkoutTime,
+      dietaryPreference: _dietaryPreference,
+      healthNotes: _healthNotesCtrl.text,
+    );
+    final guidance = GuidanceService.forProfile(
+      profile,
+      checkIn: StorageService.instance.loadTodayCheckIn(),
+    );
+    return GlassCard(
+      padding: EdgeInsets.all(17),
+      borderRadius: 20,
+      color: AppColors.surfaceElevated,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: AppColors.primary),
+              SizedBox(width: 9),
+              Expanded(
+                child: LocalizedText(
+                  'Gợi ý theo hồ sơ',
+                  style: AppTextTheme.titleMedium,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 10),
+          LocalizedText(
+            guidance.trainingSummary,
+            style: AppTextTheme.bodySmall,
+          ),
+          SizedBox(height: 10),
+          ...guidance.weeklyActions
+              .take(2)
+              .map(
+                (text) => Padding(
+                  padding: EdgeInsets.only(bottom: 7),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(top: 5),
+                        child: Icon(
+                          Icons.check_circle_rounded,
+                          size: 15,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: LocalizedText(
+                          text,
+                          style: AppTextTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          LocalizedText(
+            'Nguồn hướng dẫn chung: WHO. Không thay thế chẩn đoán hoặc tư vấn y khoa.',
+            style: AppTextTheme.caption,
+          ),
+        ],
       ),
     );
   }

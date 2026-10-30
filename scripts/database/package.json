@@ -1,0 +1,7 @@
+{
+  "name": "fitplan-database-checks",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node check.mjs --bundle" },
+  "dependencies": { "@electric-sql/pglite": "0.5.13" }
+}

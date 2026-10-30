@@ -1,11 +1,14 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
-import '../widgets/modern_components.dart';
+
+import '../services/app_localization.dart';
+
 import '../models/data_models.dart';
 import '../repositories/workout_schedule_repository.dart';
 import '../services/storage_service.dart';
+import '../services/cloud_sync_service.dart';
+import '../theme/app_theme.dart';
 
 class WorkoutSessionScreen extends StatefulWidget {
   const WorkoutSessionScreen({super.key});
@@ -15,223 +18,473 @@ class WorkoutSessionScreen extends StatefulWidget {
 }
 
 class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
-  String _dayName = 'Buổi tập';
-  List<Map<String, dynamic>> _exercises = [];
-  List<TextEditingController> _setsCtrls = [];
-  List<TextEditingController> _repsCtrls = [];
-  List<TextEditingController> _weightCtrls = [];
+  String _dayName = 'Buổi tập chủ động';
   String _sessionId = '';
-
+  List<Map<String, dynamic>> _exercises = [];
+  List<List<bool>> _completedSets = [];
+  List<TextEditingController> _weightControllers = [];
+  List<int> _rpeValues = [];
+  Timer? _timer;
+  final int _restSeconds = 60;
+  int _remaining = 0;
   bool _loaded = false;
-
-  @override
-  void initState() {
-    super.initState();
-  }
+  final DateTime _startedAt = DateTime.now();
+  String? _branch;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_loaded) {
-      _loaded = true;
-      _loadArgs();
+    if (_loaded) return;
+    _loaded = true;
+    final membership = StorageService.instance.loadMembership();
+    if (['Thủ Đức', 'Bình Thạnh', 'Quận 1'].contains(membership.branchName)) {
+      _branch = membership.branchName;
     }
-  }
-
-  void _loadArgs() {
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args == null) {
-      _buildDefault();
-      return;
+    if (args is Map) {
+      _dayName = args['dayName'] as String? ?? 'Buổi tập';
+      _sessionId =
+          args['id'] as String? ??
+          'session_${DateTime.now().millisecondsSinceEpoch}';
+      _exercises = (args['exercises'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
     }
-    final map = args as Map?;
-    if (map == null) {
-      _buildDefault();
-      return;
+    if (_exercises.isEmpty) {
+      _sessionId = 'session_${DateTime.now().millisecondsSinceEpoch}';
+      _exercises = [
+        {'exerciseName': 'Bench Press', 'sets': 3, 'reps': 10, 'weight': 40.0},
+        {'exerciseName': 'Lat Pulldown', 'sets': 3, 'reps': 12, 'weight': 35.0},
+        {'exerciseName': 'Squat', 'sets': 3, 'reps': 10, 'weight': 50.0},
+      ];
     }
-    _dayName = (map['dayName'] as String? ?? 'Buổi tập');
-    _sessionId = (map['id'] as String? ?? 'session_${DateTime.now().millisecondsSinceEpoch}');
-    final exList = (map['exercises'] as List? ?? []);
-    _exercises = exList.cast<Map<String, dynamic>>().toList();
-    _initControllers();
-  }
-
-  void _buildDefault() {
-    _dayName = 'Ngực & Tay sau';
-    _sessionId = 'session_${DateTime.now().millisecondsSinceEpoch}';
-    _exercises = [
-      {'exerciseName': 'Bench Press', 'sets': 3, 'reps': 10, 'weight': 60.0},
-      {'exerciseName': 'Incline Dumbbell Press', 'sets': 3, 'reps': 10, 'weight': 25.0},
-      {'exerciseName': 'Cable Chest Flyes', 'sets': 3, 'reps': 12, 'weight': 20.0},
-      {'exerciseName': 'Push-up', 'sets': 3, 'reps': 12, 'weight': 0.0},
-    ];
-    _initControllers();
-  }
-
-  void _initControllers() {
-    _setsCtrls = [];
-    _repsCtrls = [];
-    _weightCtrls = [];
-    for (final e in _exercises) {
-      _setsCtrls.add(TextEditingController(text: e['sets'].toString()));
-      _repsCtrls.add(TextEditingController(text: e['reps'].toString()));
-      _weightCtrls.add(TextEditingController(text: e['weight'].toString()));
-    }
+    _completedSets = _exercises
+        .map((e) => List<bool>.filled((e['sets'] as num?)?.toInt() ?? 3, false))
+        .toList();
+    _weightControllers = _exercises
+        .map((e) => TextEditingController(text: '${e['weight'] ?? 0}'))
+        .toList();
+    _rpeValues = List<int>.filled(_exercises.length, 7);
   }
 
   @override
   void dispose() {
-    for (final c in _setsCtrls) c.dispose();
-    for (final c in _repsCtrls) c.dispose();
-    for (final c in _weightCtrls) c.dispose();
+    _timer?.cancel();
+    for (final controller in _weightControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
-  List<ExerciseLog> _readLogs() {
-    final logs = <ExerciseLog>[];
-    for (var i = 0; i < _exercises.length; i++) {
-      final sets = int.tryParse(_setsCtrls[i].text) ?? 0;
-      final reps = int.tryParse(_repsCtrls[i].text) ?? 0;
-      final weight = double.tryParse(_weightCtrls[i].text) ?? 0.0;
-      if (sets <= 0 && reps <= 0 && weight <= 0) continue;
-      logs.add(ExerciseLog(
-        id: '${_sessionId}_${i}',
-        sessionId: _sessionId,
-        exerciseName: _exercises[i]['exerciseName'] as String? ?? 'Bài tập',
-        sets: sets,
-        reps: reps,
-        weight: weight,
-      ));
-    }
-    return logs;
+  int get _totalSets =>
+      _completedSets.fold(0, (sum, sets) => sum + sets.length);
+  int get _doneSets => _completedSets.fold(
+    0,
+    (sum, sets) => sum + sets.where((done) => done).length,
+  );
+
+  void _toggleSet(int exerciseIndex, int setIndex) {
+    setState(
+      () => _completedSets[exerciseIndex][setIndex] =
+          !_completedSets[exerciseIndex][setIndex],
+    );
+    if (_completedSets[exerciseIndex][setIndex]) _startRest(_restSeconds);
   }
 
-  Future<void> _complete() async {
-    final logs = _readLogs();
+  void _startRest(int seconds) {
+    _timer?.cancel();
+    setState(() => _remaining = seconds);
+    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (_remaining <= 1) {
+        timer.cancel();
+        if (mounted) {
+          setState(() => _remaining = 0);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: LocalizedText(
+                'Hết giờ nghỉ — sẵn sàng cho hiệp tiếp theo!',
+              ),
+            ),
+          );
+        }
+      } else if (mounted) {
+        setState(() => _remaining--);
+      }
+    });
+  }
+
+  Future<void> _finish() async {
+    final logs = <ExerciseLog>[];
+    final previousBest = <String, double>{};
+    for (final session in StorageService.instance.loadWorkoutSessions()) {
+      for (final log in session.logs) {
+        final current = previousBest[log.exerciseName] ?? 0;
+        if (log.weight > current) previousBest[log.exerciseName] = log.weight;
+      }
+    }
+    for (var i = 0; i < _exercises.length; i++) {
+      final completed = _completedSets[i].where((done) => done).length;
+      if (completed == 0) continue;
+      final exerciseName = _exercises[i]['exerciseName'] as String? ?? '';
+      final weight = double.tryParse(_weightControllers[i].text) ?? 0;
+      logs.add(
+        ExerciseLog(
+          id: '${_sessionId}_$i',
+          sessionId: _sessionId,
+          exerciseName: _exercises[i]['exerciseName'] as String? ?? 'Bài tập',
+          sets: completed,
+          reps: (_exercises[i]['reps'] as num?)?.toInt() ?? 0,
+          weight: weight,
+          rpe: _rpeValues[i],
+          isPersonalRecord:
+              weight > 0 && weight > (previousBest[exerciseName] ?? 0),
+        ),
+      );
+    }
     if (logs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng nhập ít nhất một kết quả tập')),
+        SnackBar(content: LocalizedText('Hãy hoàn thành ít nhất một hiệp tập')),
       );
       return;
     }
-
-    final session = WorkoutSession(
-      id: _sessionId,
-      dayName: _dayName,
-      date: DateTime.now(),
-      logs: logs,
+    if (_branch == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: LocalizedText('Chọn nơi tập để lưu lịch sử chính xác.'),
+        ),
+      );
+      return;
+    }
+    await StorageService.instance.addWorkoutSession(
+      WorkoutSession(
+        id: _sessionId,
+        dayName: _dayName,
+        date: DateTime.now(),
+        logs: logs,
+        branchName: _branch!,
+        checkedInAt: _startedAt,
+      ),
     );
-    await StorageService.instance.addWorkoutSession(session);
+    await CloudSyncService.instance.syncNow();
     await WorkoutScheduleRepository.setStatus(_sessionId, 'completed');
-
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Đã lưu kết quả buổi tập')),
-    );
     Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
+    final progress = _totalSets == 0 ? 0.0 : _doneSets / _totalSets;
     return Scaffold(
       backgroundColor: AppColors.background,
-      extendBodyBehindAppBar: true,
-      appBar: ModernAppBar(title: _dayName, centerTitle: false),
-      body: SafeArea(
-        child: Column(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-                physics: const BouncingScrollPhysics(),
-                itemCount: _exercises.length,
-                itemBuilder: (context, i) {
-                  final ex = _exercises[i];
-                  return _exerciseItem(i, ex);
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-              child: GradientButton(
-                onPressed: _complete,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('Hoàn thành buổi tập', style: AppTextTheme.labelLarge.copyWith(fontWeight: FontWeight.w700, color: AppColors.textInverse)),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.check_circle_rounded, color: AppColors.textInverse, size: 22),
-                  ],
-                ),
-              ),
+            LocalizedText(_dayName),
+            LocalizedText(
+              '$_doneSets/$_totalSets hiệp hoàn thành',
+              style: AppTextTheme.caption,
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: Icon(Icons.close_rounded),
+          ),
+        ],
       ),
-      bottomNavigationBar: const ModernBottomNav(currentIndex: 1, onTap: null),
+      bottomNavigationBar: SafeArea(
+        minimum: EdgeInsets.fromLTRB(20, 8, 20, 16),
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            minimumSize: Size.fromHeight(56),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+          onPressed: _finish,
+          icon: Icon(Icons.flag_rounded),
+          label: LocalizedText('Hoàn thành buổi tập'),
+        ),
+      ),
+      body: Column(
+        children: [
+          LinearProgressIndicator(
+            value: progress,
+            minHeight: 6,
+            backgroundColor: AppColors.divider,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          if (_remaining > 0) _restBanner(),
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: DropdownButtonFormField<String>(
+              initialValue: _branch,
+              decoration: InputDecoration(labelText: tr('Nơi tập')),
+              items: ['Thủ Đức', 'Bình Thạnh', 'Quận 1', 'Tập tại nhà']
+                  .map(
+                    (branch) => DropdownMenuItem(
+                      value: branch,
+                      child: LocalizedText(branch),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() => _branch = value),
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 26),
+              physics: BouncingScrollPhysics(),
+              itemCount: _exercises.length,
+              separatorBuilder: (_, _) => SizedBox(height: 16),
+              itemBuilder: (_, index) => _exerciseCard(index),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _exerciseItem(int index, Map<String, dynamic> ex) {
+  Widget _restBanner() {
+    final minutes = (_remaining ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_remaining % 60).toString().padLeft(2, '0');
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: GlassCard(
-        padding: const EdgeInsets.all(16),
-        borderRadius: 16,
-        color: AppColors.surfaceElevated,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              ex['exerciseName'] as String? ?? 'Bài tập',
-              style: AppTextTheme.titleMedium.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 14),
-            Row(
+      margin: EdgeInsets.fromLTRB(20, 14, 20, 0),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: AppGradients.primary,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 58,
+            height: 58,
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                Expanded(
-                  child: _inputField(_setsCtrls[index], 'Hiệp', 'số hiệp'),
+                CircularProgressIndicator(
+                  value: (_remaining / _restSeconds).clamp(0.0, 1.0),
+                  strokeWidth: 6,
+                  backgroundColor: Colors.black12,
+                  valueColor: AlwaysStoppedAnimation(AppColors.textInverse),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _inputField(_repsCtrls[index], 'Lần', 'số lần'),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _inputField(_weightCtrls[index], 'Tạ (kg)', 'mức tạ'),
+                Icon(
+                  Icons.hourglass_bottom_rounded,
+                  color: AppColors.textInverse,
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LocalizedText(
+                  'Đang nghỉ',
+                  style: AppTextTheme.caption.copyWith(
+                    color: AppColors.textInverse,
+                  ),
+                ),
+                LocalizedText(
+                  '$minutes:$seconds',
+                  style: AppTextTheme.headlineLarge.copyWith(
+                    color: AppColors.textInverse,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _remaining += 30),
+            child: LocalizedText('+30s'),
+          ),
+          IconButton(
+            onPressed: () {
+              _timer?.cancel();
+              setState(() => _remaining = 0);
+            },
+            icon: Icon(Icons.skip_next_rounded, color: AppColors.textInverse),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _inputField(TextEditingController c, String label, String hint) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: AppTextTheme.caption.copyWith(color: AppColors.textMuted, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        SizedBox(
-          height: 46,
-          child: TextField(
-            controller: c,
-            keyboardType: TextInputType.number,
-            style: const TextStyle(fontFamily: AppTextTheme.font, fontSize: 14, color: AppColors.textPrimary),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(fontFamily: AppTextTheme.font, fontSize: 12, color: AppColors.textMuted),
-              filled: true,
-              fillColor: AppColors.surface,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+  Widget _exerciseCard(int index) {
+    final exercise = _exercises[index];
+    final sets = _completedSets[index];
+    final reps = (exercise['reps'] as num?)?.toInt() ?? 10;
+    return Container(
+      padding: EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: sets.every((done) => done)
+              ? AppColors.primary
+              : AppColors.divider,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  Icons.fitness_center_rounded,
+                  color: AppColors.primary,
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LocalizedText(
+                      exercise['exerciseName'] as String? ?? 'Bài tập',
+                      style: AppTextTheme.titleMedium,
+                    ),
+                    LocalizedText(
+                      '${sets.length} hiệp × $reps lần',
+                      style: AppTextTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: 76,
+                child: TextField(
+                  controller: _weightControllers[index],
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  decoration: InputDecoration(
+                    suffixText: 'kg',
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 9,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 16),
+          Container(
+            padding: EdgeInsets.fromLTRB(14, 10, 8, 6),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.speed_rounded,
+                      size: 19,
+                      color: AppColors.secondary,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(child: LocalizedText('Độ khó cảm nhận (RPE)')),
+                    LocalizedText(
+                      '${_rpeValues[index]}/10',
+                      style: AppTextTheme.labelLarge.copyWith(
+                        color: AppColors.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+                Slider(
+                  value: _rpeValues[index].toDouble(),
+                  min: 1,
+                  max: 10,
+                  divisions: 9,
+                  onChanged: (value) =>
+                      setState(() => _rpeValues[index] = value.round()),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+          SizedBox(height: 18),
+          ...List.generate(sets.length, (setIndex) {
+            final done = sets[setIndex];
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: setIndex == sets.length - 1 ? 0 : 9,
+              ),
+              child: Material(
+                color: done
+                    ? AppColors.primary.withValues(alpha: .13)
+                    : AppColors.surface,
+                borderRadius: BorderRadius.circular(15),
+                child: InkWell(
+                  onTap: () => _toggleSet(index, setIndex),
+                  borderRadius: BorderRadius.circular(15),
+                  child: Container(
+                    constraints: BoxConstraints(minHeight: 54),
+                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    child: Row(
+                      children: [
+                        AnimatedContainer(
+                          duration: Duration(milliseconds: 180),
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: done
+                                ? AppColors.primary
+                                : Colors.transparent,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: done
+                                  ? AppColors.primary
+                                  : AppColors.textMuted,
+                              width: 2,
+                            ),
+                          ),
+                          child: done
+                              ? Icon(
+                                  Icons.check_rounded,
+                                  size: 20,
+                                  color: AppColors.textInverse,
+                                )
+                              : null,
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: LocalizedText(
+                            'Hiệp ${setIndex + 1}',
+                            style: AppTextTheme.labelLarge,
+                          ),
+                        ),
+                        LocalizedText(
+                          '$reps lần',
+                          style: AppTextTheme.bodyMedium.copyWith(
+                            color: done
+                                ? AppColors.primary
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 }

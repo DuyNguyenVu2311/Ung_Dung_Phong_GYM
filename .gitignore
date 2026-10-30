@@ -46,3 +46,18 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Disposable local inspection tools, screenshots and caches
+/.tmp/
+/.vscode/
+**/node_modules/
+*.tmp
+__pycache__/
+
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+android/key.properties

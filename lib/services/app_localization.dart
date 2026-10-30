@@ -1,0 +1,476 @@
+import 'package:flutter/material.dart';
+
+import 'app_settings_service.dart';
+
+class AppSettingsScope extends InheritedNotifier<Listenable> {
+  AppSettingsScope({super.key, required super.child})
+    : super(
+        notifier: Listenable.merge([
+          AppSettingsService.themeMode,
+          AppSettingsService.language,
+          AppSettingsService.platformAppearance,
+        ]),
+      );
+  static void watch(BuildContext context) {
+    context.dependOnInheritedWidgetOfExactType<AppSettingsScope>();
+  }
+}
+
+String tr(String text) {
+  if (AppSettingsService.language.value != 'en') return text;
+  final direct = _en[text];
+  if (direct != null) return direct;
+  final cached = _translationCache[text];
+  if (cached != null) return cached;
+  var result = text;
+  for (final entry in _translationPhrases) {
+    if (entry.key.length >= 4) {
+      result = result.replaceAll(entry.key, entry.value);
+    }
+  }
+  if (_translationCache.length >= 512) _translationCache.clear();
+  _translationCache[text] = result;
+  return result;
+}
+
+final _translationPhrases = _en.entries.toList()
+  ..sort((a, b) => b.key.length.compareTo(a.key.length));
+final _translationCache = <String, String>{};
+
+class LocalizedText extends StatelessWidget {
+  final String data;
+  final TextStyle? style;
+  final TextAlign? textAlign;
+  final int? maxLines;
+  final TextOverflow? overflow;
+  final bool? softWrap;
+  final String? semanticsLabel;
+  const LocalizedText(
+    this.data, {
+    super.key,
+    this.style,
+    this.textAlign,
+    this.maxLines,
+    this.overflow,
+    this.softWrap,
+    this.semanticsLabel,
+  });
+  @override
+  Widget build(BuildContext context) {
+    AppSettingsScope.watch(context);
+    return Text(
+      tr(data),
+      style: style,
+      textAlign: textAlign,
+      maxLines: maxLines,
+      overflow: overflow,
+      softWrap: softWrap,
+      semanticsLabel: semanticsLabel == null ? null : tr(semanticsLabel!),
+    );
+  }
+}
+
+const _en = <String, String>{
+  'Không xếp buổi tập': 'No workout scheduled',
+  'Ưu tiên nghỉ ngơi': 'Prioritize rest',
+  'Cường độ vừa': 'Moderate intensity',
+  'Thời gian bạn có thể dành hôm nay': 'Time you have available today',
+  'Đây là thời gian bạn có, không phải thời lượng bắt buộc phải tập.':
+      'This is your availability, not a required workout duration.',
+  'Mức ': 'Level ',
+  'Nghỉ ngơi và phục hồi': 'Rest and recover',
+  'Không còn buổi tập sắp tới trong tuần. Lịch tuần mới sẽ cập nhật tự động.': 'No upcoming workouts remain this week. Your new weekly schedule will update automatically.',
+  'Xem lịch tập': 'View schedule',
+  'Giờ Việt Nam (GMT+7)': 'Vietnam time (GMT+7)',
+  'Quét mã thanh toán': 'Scan to pay',
+  'Quét mã để thanh toán': 'Scan to make a payment',
+  'Mã QR thanh toán': 'Payment QR code',
+  'Phóng to mã QR': 'Enlarge QR code',
+  'Kiểm tra tên người nhận và số tiền trong ứng dụng trước khi xác nhận.': 'Check the recipient name and amount in your payment app before confirming.',
+  'Ưu đãi đang áp dụng': 'Current standing offer',
+  'Giảm 10% khi đăng ký gói 3 tháng': 'Save 10% with a 3-month membership',
+  'Gói 1 tháng: 299.000đ. Gói 3 tháng: 807.300đ, tiết kiệm 89.700đ so với ba gói 1 tháng. Áp dụng tại Thủ Đức, Bình Thạnh và Quận 1.': '1 month: 299,000 VND. 3 months: 807,300 VND, saving 89,700 VND compared with three monthly plans. Available at Thu Duc, Binh Thanh and District 1.',
+  'T2': 'Mon',
+  'T3': 'Tue',
+  'T4': 'Wed',
+  'T5': 'Thu',
+  'T6': 'Fri',
+  'T7': 'Sat',
+  'CN': 'Sun',
+  '1 tháng': '1 month',
+  '3 tháng': '3 months',
+  'Chi nhánh': 'Branch',
+  'Nơi tập': 'Workout location',
+  'Tập tại nhà': 'At home',
+  'Gói 3 tháng giảm 10% so với mua 3 gói 1 tháng.':
+      'The 3-month plan saves 10% compared with three 1-month plans.',
+  'Chọn nơi tập để lưu lịch sử chính xác.':
+      'Choose a workout location to save accurate history.',
+  'Thanh toán gói tập': 'Membership payment',
+  'Chọn phương thức thanh toán': 'Choose a payment method',
+  'Thanh toán tại quầy': 'Pay at reception',
+  'Phòng tập xác nhận sau khi nhận tiền.':
+      'The gym confirms after receiving payment.',
+  'Chuyển khoản ngân hàng': 'Bank transfer',
+  'Chuyển đúng số tiền và nội dung giao dịch.':
+      'Use the exact amount and payment reference.',
+  'Phòng tập chưa cấu hình tài khoản nhận tiền.':
+      'The gym has not configured receiving details.',
+  'Thanh toán MoMo': 'Pay with MoMo',
+  'Chuyển MoMo và chờ phòng tập xác nhận.':
+      'Transfer with MoMo and await gym confirmation.',
+  'Thanh toán online': 'Online payment',
+  'Phòng tập chưa kích hoạt cổng thanh toán.':
+      'Online checkout has not been activated.',
+  'Đang xử lý...': 'Processing...',
+  'Xác nhận phương thức': 'Confirm payment method',
+  'Gói tập đã được kích hoạt. Bạn có thể quay lại xem hợp đồng.':
+      'Your membership is active. Return to view your contract.',
+  'Yêu cầu đã đóng. Hãy quay lại và chọn gói tập để tạo yêu cầu mới.': 'This request is closed. Return to select a package and create a new request.',
+  'Mã yêu cầu': 'Request reference',
+  'Đưa mã yêu cầu cho quầy lễ tân và thanh toán để kích hoạt gói tập.':
+      'Present the reference at reception and pay to activate your membership.',
+  'Ngân hàng': 'Bank',
+  'Số tài khoản': 'Account number',
+  'Tên chủ tài khoản': 'Account holder',
+  'Số tiền': 'Amount',
+  'Nội dung chuyển khoản': 'Payment reference',
+  'Số MoMo': 'MoMo phone number',
+  'Tên người nhận': 'Recipient',
+  'Phòng tập sẽ đối chiếu giao dịch và gửi thông báo sau khi xác nhận.':
+      'The gym will reconcile the payment and notify you after confirmation.',
+  'Tạo phiên thanh toán online': 'Create online checkout',
+  'Mở cổng thanh toán': 'Open payment gateway',
+  'Sau khi thanh toán, quay lại đây và kiểm tra trạng thái.':
+      'Return here after paying and check the status.',
+  'Kiểm tra trạng thái': 'Check payment status',
+  'Hủy yêu cầu': 'Cancel request',
+  'Sao chép': 'Copy',
+  'tháng': 'months',
+  'Bạn ngồi nhiều trong ngày, nên thêm các quãng đi bộ ngắn.':
+      'You spend much of the day sitting. Add short walking breaks.',
+  'Công việc đã vận động nhiều, cần ưu tiên hồi phục giữa các buổi sức mạnh.': 'Your job is physically active. Prioritize recovery between strength sessions.',
+  'Mức vận động hằng ngày ở mức vừa, có thể duy trì lịch tập cân bằng.':
+      'Your daily activity is moderate. Maintain a balanced training schedule.',
+  'giảm mỡ nhưng vẫn duy trì sức mạnh': 'fat loss while maintaining strength',
+  'duy trì thể lực và sức khỏe': 'maintaining fitness and health',
+  'tăng cơ và sức mạnh': 'building muscle and strength',
+  'Hãy check-in mỗi ngày để điều chỉnh cường độ.':
+      'Check in daily to adjust training intensity.',
+  'Kế hoạch hướng đến': 'Your plan focuses on',
+  'buổi sức mạnh/tuần, ưu tiên các ngày':
+      'strength sessions per week, prioritizing',
+  'Tích lũy 150-300 phút vận động aerobic cường độ vừa mỗi tuần, hoặc lượng vận động mạnh tương đương.': 'Aim for 150–300 minutes of moderate aerobic activity per week, or the equivalent vigorous activity.',
+  'Tập sức mạnh các nhóm cơ lớn ít nhất 2 ngày/tuần và tăng khối lượng từ từ.': 'Train major muscle groups at least twice per week and increase the workload gradually.',
+  'Xen kẽ ngày tập nặng với ngày nghỉ hoặc vận động nhẹ.':
+      'Alternate harder training days with rest or light activity.',
+  'Nếu đau bất thường, kiệt sức hoặc ngủ rất kém: nghỉ tập và cân nhắc hỏi chuyên gia y tế.': 'If you experience unusual pain, exhaustion or very poor sleep, rest and consider medical advice.',
+  'Ưu tiên ngủ đủ, uống nước và không cố hoàn thành bài tập khi kỹ thuật giảm.': 'Prioritize sleep and hydration. Stop when you can no longer maintain good technique.',
+  'Ăn đa dạng ngũ cốc nguyên hạt, rau, trái cây, đậu, hạt và nguồn đạm phù hợp.': 'Eat a variety of whole grains, vegetables, fruit, legumes, nuts and suitable protein sources.',
+  'Hướng tới ít nhất 400 g rau và trái cây mỗi ngày.':
+      'Aim for at least 400 g of fruit and vegetables per day.',
+  'Hạn chế đường tự do dưới 10% tổng năng lượng và muối dưới 5 g/ngày.': 'Limit free sugars to under 10% of energy intake and salt to under 5 g per day.',
+  'Bạn ăn chay: phối hợp đậu, đậu phụ, hạt, trứng/sữa nếu phù hợp để đa dạng nguồn đạm.': 'For a vegetarian diet, combine legumes, tofu, nuts and eggs or dairy if suitable for varied protein sources.',
+  'Nếu giảm tinh bột, vẫn ưu tiên nguồn tinh bột nguyên hạt quanh buổi tập và không loại bỏ rau quả.': 'If reducing carbohydrates, prioritize whole-grain sources around training and keep fruit and vegetables.',
+  'Với chế độ cân bằng, chia khẩu phần hợp lý và ưu tiên thực phẩm ít chế biến.': 'For a balanced diet, use suitable portions and prioritize minimally processed foods.',
+  'Yêu cầu được gửi đến phòng tập. Gói tập được kích hoạt sau khi phòng tập xác nhận thanh toán.': 'Your request will be sent to the gym. Membership activates after the gym confirms payment.',
+  'Tuần này': 'This week',
+  'Tháng': 'Month',
+  'Hiệp': 'Set',
+  'Số hiệp': 'Sets',
+  'Số lần': 'Repetitions',
+  'Còn lại': 'Remaining',
+  'Đã tập': 'Completed',
+  'Đang hoạt động': 'Active',
+  'Kế hoạch hôm nay': 'Today’s plan',
+  'Đã lưu check-in': 'Check-in saved',
+  'Khung giờ': 'Time slot',
+  'Duy trì thể lực': 'Maintain fitness',
+  'Có kinh nghiệm': 'Experienced',
+  'Đang nghỉ ngơi': 'Resting',
+  'Không có lịch tập': 'No scheduled workout',
+  'Chưa có buổi tập': 'No workouts yet',
+  'Đọc tất cả': 'Mark all as read',
+  'Không tải được dữ liệu': 'Unable to load data',
+  'Không gửi được yêu cầu': 'Unable to send request',
+  'Không tải được thông báo': 'Unable to load notifications',
+  'Không tải được ưu đãi': 'Unable to load promotions',
+  'Không tải được hồ sơ': 'Unable to load profile',
+  'Không lưu được hồ sơ': 'Unable to save profile',
+  'Vui lòng nhập': 'Please enter',
+  'Nhập giá trị từ': 'Enter a value from',
+  'đến': 'to',
+  'Gói tập sắp hết hạn': 'Membership expires soon',
+  'Gia hạn thành công': 'Membership renewed',
+  'Vui lòng nhập đầy đủ và kiểm tra lại thông tin thể trạng.':
+      'Please complete and check your personal measurements.',
+  'Chỉ xem - ngày đã qua': 'Read only - past day',
+  'Ngày đã qua nên nội dung được khóa và chỉ có thể xem.':
+      'Past days are locked and can only be viewed.',
+  'Check-in thể trạng': 'Readiness check-in',
+  'Lịch sử check-in thể trạng': 'Readiness check-in history',
+  'Bạn muốn thay đổi điều gì?': 'What would you like to change?',
+  'Bạn đang tiến bộ': 'You are making progress',
+  'Bắt đầu bài tập': 'Start exercise',
+  'Chọn mục tiêu': 'Choose a goal',
+  'Chọn trình độ': 'Choose your experience',
+  'Các buổi tập': 'Workout sessions',
+  'Các thông tin này giúp lịch tập phù hợp với công việc, thời gian rảnh và khả năng hồi phục của bạn.': 'These details help adapt your schedule to your work, availability and recovery.',
+  'Ghi ít nhất 2 lần để xem xu hướng thay đổi.':
+      'Log at least twice to see a trend.',
+  'Gợi ý theo hồ sơ': 'Profile recommendations',
+  'Hoàn thành buổi tập': 'Finish workout',
+  'Hoàn thành buổi tập đầu tiên để xem thành tích tại đây.':
+      'Complete your first workout to see your achievements here.',
+  'Hành động này xóa tài khoản Supabase và dữ liệu đồng bộ. Bạn không thể hoàn tác.': 'This permanently deletes your account and synced data. This action cannot be undone.',
+  'Hãy hoàn thành ít nhất một hiệp tập': 'Complete at least one set',
+  'Hướng dẫn rõ ràng để bạn tập đúng và an toàn.':
+      'Instructions to help you exercise correctly and safely.',
+  'Hết giờ nghỉ — sẵn sàng cho hiệp tiếp theo!':
+      'Rest is over — ready for the next set!',
+  'Khuyến nghị AI Coach': 'Training recommendations',
+  'Khám phá bài tập': 'Explore exercises',
+  'Không phải ngày nào cũng cần tập hết sức.':
+      'You do not need to train at full intensity every day.',
+  'Không tìm thấy bài tập': 'No exercises found',
+  'Khối lượng tập trong tuần': 'Weekly training volume',
+  'Lên lịch trong tuần': 'Plan your week',
+  'Lưu ý an toàn': 'Safety notes',
+  'Lịch trong tuần': 'This week',
+  'Mục tiêu của bạn': 'Your goal',
+  'Nghỉ phục hồi': 'Recovery day',
+  'Ngày có thể tập': 'Available training days',
+  'Ngày nghỉ và phục hồi': 'Rest and recovery',
+  'Nên cân cùng một thời điểm trong ngày để dữ liệu nhất quán.':
+      'Weigh yourself at the same time of day for consistent measurements.',
+  'Nếu bạn đau bất thường, chóng mặt, khó thở hoặc kiệt sức, hãy dừng tập và tìm tư vấn y tế.': 'Stop exercising and seek medical advice if you experience unusual pain, dizziness, breathlessness or exhaustion.',
+  'Thành tích gần đây': 'Recent achievements',
+  'Thành viên FitPlan': 'FitPlan member',
+  'Tiến độ của bạn': 'Your progress',
+  'Trình độ & Lịch trình tập': 'Experience & schedule',
+  'Tạo kế hoạch': 'Create plan',
+  'Tạo lịch tập tự động': 'Generate workout schedule',
+  'Tổng sets × reps × mức tạ theo từng ngày':
+      'Total sets × reps × weight per day',
+  'Áp dụng vào lịch tập': 'Apply to schedule',
+  'Đang nghỉ': 'Resting',
+  'Đã hiểu': 'Got it',
+  'Đã lưu hồ sơ': 'Profile saved',
+  'Đổi': 'Change',
+  'Độ khó cảm nhận (RPE)': 'Rate of perceived exertion (RPE)',
+  'Nguồn hướng dẫn chung: WHO. Không thay thế chẩn đoán hoặc tư vấn y khoa.': 'General guidance source: WHO. This does not replace medical diagnosis or advice.',
+  'Chọn mục tiêu gần với cuộc sống của bạn nhất.':
+      'Choose the goal that best matches your lifestyle.',
+  'Chọn từng ngày để xem chi tiết bài tập của buổi tập đó.':
+      'Select a day to view its workout details.',
+  'Bước 3/3 • Hoàn tất hồ sơ': 'Step 3/3 • Complete profile',
+  '18.5 - 24.9: Bình thường   >25: Thừa cân   <18.5: Gầy':
+      '18.5–24.9: Normal   ≥25: Overweight   <18.5: Underweight',
+  'Trang chủ': 'Home',
+  'Lịch tập': 'Schedule',
+  'Bài tập': 'Exercises',
+  'Hội viên': 'Membership',
+  'Cá nhân': 'Profile',
+  'Gói tập & hợp đồng': 'Membership & contracts',
+  'Thông báo': 'Notifications',
+  'Cài đặt': 'Settings',
+  'Cài đặt tài khoản': 'Account settings',
+  'Giao diện': 'Appearance',
+  'Ngôn ngữ': 'Language',
+  'Tối': 'Dark',
+  'Sáng': 'Light',
+  'Theo thiết bị': 'System default',
+  'Tiếng Việt': 'Vietnamese',
+  'Đăng xuất': 'Sign out',
+  'Xóa tài khoản': 'Delete account',
+  'Xóa tài khoản?': 'Delete account?',
+  'Xóa vĩnh viễn': 'Delete permanently',
+  'Hủy': 'Cancel',
+  'Xác nhận': 'Confirm',
+  'Lưu': 'Save',
+  'Thử lại': 'Retry',
+  'Đang lưu...': 'Saving...',
+  'Đăng nhập': 'Sign in',
+  'Đăng ký': 'Sign up',
+  'Tạo tài khoản': 'Create account',
+  'Email': 'Email',
+  'Mật khẩu': 'Password',
+  'Bạn chưa có tài khoản?': 'Don’t have an account?',
+  'Đã có tài khoản?': 'Already have an account?',
+  'Kiểm tra email để xác nhận tài khoản.':
+      'Check your email to confirm your account.',
+  'Email hoặc mật khẩu chưa đúng.': 'Incorrect email or password.',
+  'Email này đã được đăng ký.': 'This email is already registered.',
+  'Mật khẩu cần có ít nhất 6 ký tự.':
+      'Password must contain at least 6 characters.',
+  'Hồ sơ cá nhân': 'Personal profile',
+  'Chỉnh sửa': 'Edit',
+  'Lưu hồ sơ': 'Save profile',
+  'Chỉ số khối cơ thể': 'Body mass index',
+  'Bình thường': 'Normal',
+  'Gầy': 'Underweight',
+  'Thừa cân': 'Overweight',
+  'Béo phì': 'Obese',
+  'Mục tiêu & Lịch trình': 'Goals & schedule',
+  'Mục tiêu': 'Goal',
+  'Tăng cơ': 'Build muscle',
+  'Giảm mỡ': 'Lose fat',
+  'Duy trì sức khỏe': 'Maintain fitness',
+  'Trình độ': 'Experience',
+  'Mới bắt đầu': 'Beginner',
+  'Đã có kinh nghiệm': 'Experienced',
+  'Số buổi tập/tuần': 'Sessions per week',
+  'Dữ liệu cá nhân hóa': 'Personalization',
+  'Nghề nghiệp': 'Occupation',
+  'Mức vận động': 'Activity level',
+  'Mức vận động hằng ngày': 'Daily activity level',
+  'Ngồi nhiều': 'Mostly sitting',
+  'Vận động vừa': 'Moderately active',
+  'Vận động nhiều': 'Very active',
+  'Ít vận động / ngồi nhiều': 'Sedentary / mostly sitting',
+  'Khung giờ tập phù hợp': 'Preferred workout time',
+  'Buổi sáng': 'Morning',
+  'Buổi chiều': 'Afternoon',
+  'Buổi tối': 'Evening',
+  'Chế độ ăn': 'Diet preference',
+  'Cân bằng': 'Balanced',
+  'Ăn chay': 'Vegetarian',
+  'Giảm tinh bột': 'Low carbohydrate',
+  'Thể trạng / chấn thương cần lưu ý': 'Health conditions / injuries',
+  'Để trống nếu không có': 'Leave blank if none',
+  'Họ và tên': 'Full name',
+  'Họ tên': 'Full name',
+  'Tuổi': 'Age',
+  'Chiều cao (cm)': 'Height (cm)',
+  'Cân nặng (kg)': 'Weight (kg)',
+  'Chiều cao': 'Height',
+  'Cân nặng': 'Weight',
+  'Giới tính': 'Gender',
+  'Nam': 'Male',
+  'Nữ': 'Female',
+  'Khác': 'Other',
+  'Thiết lập hồ sơ của bạn': 'Set up your profile',
+  'Nhập thông tin thật để tính BMI và tạo lịch tập phù hợp.':
+      'Enter your details to calculate BMI and create your workout schedule.',
+  'Kinh nghiệm tập': 'Training experience',
+  'Chọn ngày có thể tập (tối đa 5 ngày)':
+      'Choose available training days (up to 5)',
+  'Chọn ít nhất một ngày tập': 'Choose at least one training day',
+  'Lưu hồ sơ và tạo lịch tập': 'Save profile & create schedule',
+  'Lịch sử check-in': 'Check-in history',
+  'Lịch sử tập và check-in': 'Workout & check-in history',
+  'Lịch sử tập luyện': 'Workout history',
+  'Xem lịch, buổi tập và giờ check-in':
+      'View calendar, workouts and check-in times',
+  'Chương trình khuyến mãi': 'Promotions',
+  'Chưa có ưu đãi đang hoạt động': 'No active promotions',
+  'Chưa có thông báo': 'No notifications yet',
+  'Đăng ký / gia hạn gói tập': 'Register / renew membership',
+  'Xác nhận đăng ký / gia hạn': 'Confirm membership request',
+  'Gửi yêu cầu': 'Send request',
+  'Chọn gói': 'Select package',
+  'Đã gửi yêu cầu đến phòng tập': 'Request sent to the gym',
+  'Yêu cầu gia hạn đang chờ phòng tập xác nhận thanh toán.':
+      'Your renewal request is awaiting payment confirmation from the gym.',
+  'Phòng tập chưa công bố gói tập. Vui lòng liên hệ quầy lễ tân.':
+      'No membership packages have been published. Please contact reception.',
+  'Bạn chưa có gói tập đang hoạt động. Chọn gói do phòng tập cung cấp bên dưới.': 'You have no active membership. Choose a package published by the gym below.',
+  'Lịch sử đăng ký / gia hạn': 'Membership request history',
+  'Đã xác nhận': 'Confirmed',
+  'Từ chối': 'Rejected',
+  'Chờ xác nhận': 'Pending confirmation',
+  'Gói tập': 'Membership package',
+  'Hết hạn': 'Expires',
+  'Kết thúc': 'Ends',
+  'ngày': 'days',
+  'Chào buổi sáng': 'Good morning',
+  'Chào buổi chiều': 'Good afternoon',
+  'Chào buổi tối': 'Good evening',
+  'Tăng cơ & sức mạnh': 'Muscle & strength',
+  'Giảm mỡ & thon gọn': 'Fat loss & toning',
+  'Xương khớp linh hoạt': 'Mobility',
+  'Tập nhanh tại nhà': 'Quick home workout',
+  'Sức bền & tim mạch': 'Endurance & cardio',
+  'Kế hoạch cá nhân': 'Personal plan',
+  'Check-in hôm nay': 'Daily check-in',
+  'Lưu check-in hôm nay': 'Save today’s check-in',
+  'Năng lượng': 'Energy',
+  'Đau cơ': 'Muscle soreness',
+  'Chất lượng giấc ngủ': 'Sleep quality',
+  'Thời gian hôm nay': 'Available time today',
+  'Thời gian có thể tập': 'Available training time',
+  'Kiệt sức': 'Exhausted',
+  'Mệt': 'Tired',
+  'Khỏe': 'Energetic',
+  'Rất sung sức': 'Very energetic',
+  'Không đau': 'No soreness',
+  'Hơi căng': 'Slight tension',
+  'Đau nhẹ': 'Mild soreness',
+  'Đau nhiều': 'Very sore',
+  'Đau bất thường': 'Unusual pain',
+  'Rất kém': 'Very poor',
+  'Kém': 'Poor',
+  'Tạm ổn': 'Fair',
+  'Ngủ tốt': 'Good sleep',
+  'Ngủ rất tốt': 'Very good sleep',
+  'Nên nghỉ tập và ưu tiên hồi phục': 'Rest and prioritize recovery',
+  'Tập phục hồi nhẹ, không tập đến kiệt sức':
+      'Light recovery activity; avoid exhaustion',
+  'Có thể tập với cường độ vừa': 'Moderate training is appropriate',
+  'Sẵn sàng cho buổi tập theo kế hoạch': 'Ready for the planned workout',
+  'Hôm nay': 'Today',
+  'Ngày nghỉ': 'Rest day',
+  'Nghỉ ngơi': 'Rest',
+  'Đã hoàn thành': 'Completed',
+  'Hoàn thành': 'Complete',
+  'Chưa bắt đầu': 'Not started',
+  'Đang tập': 'In progress',
+  'Chỉ xem': 'Read only',
+  'Bắt đầu tập': 'Start workout',
+  'Bắt đầu buổi tập': 'Start workout',
+  'Tiếp tục': 'Continue',
+  'Đóng': 'Close',
+  'Tiến độ tuần này': 'Weekly progress',
+  'Tiến độ tuần': 'Weekly progress',
+  'Thao tác nhanh': 'Quick actions',
+  'Tổng quan': 'Overview',
+  'Lịch sử': 'History',
+  'Thống kê': 'Statistics',
+  'Thống kê tiến bộ': 'Progress statistics',
+  'Thư viện bài tập': 'Exercise library',
+  'Tìm bài tập': 'Search exercises',
+  'Tìm kiếm bài tập...': 'Search exercises...',
+  'Tất cả': 'All',
+  'Yêu thích': 'Favorites',
+  'Nhóm cơ': 'Muscle group',
+  'Ngực': 'Chest',
+  'Lưng': 'Back',
+  'Chân': 'Legs',
+  'Vai': 'Shoulders',
+  'Tay': 'Arms',
+  'Cơ bụng': 'Core',
+  'Ghi cân nặng': 'Log weight',
+  'Lưu số đo': 'Save measurement',
+  'Lịch sử cân nặng': 'Weight history',
+  'Chưa có dữ liệu': 'No data yet',
+  'Đồng bộ Supabase': 'Cloud sync',
+  'Đồng bộ ngay': 'Sync now',
+  'Đang đồng bộ...': 'Syncing...',
+  'Gợi ý dành cho bạn': 'Recommendations for you',
+  'Kế hoạch tuần': 'Weekly plan',
+  'Phục hồi': 'Recovery',
+  'Dinh dưỡng': 'Nutrition',
+  'Số buổi': 'Sessions',
+  'Tổng buổi tập': 'Total workouts',
+  'Tổng khối lượng': 'Total volume',
+  'Thời gian': 'Duration',
+  'phút': 'minutes',
+  'buổi': 'sessions',
+  'Thứ Hai': 'Monday',
+  'Thứ Ba': 'Tuesday',
+  'Thứ Tư': 'Wednesday',
+  'Thứ Năm': 'Thursday',
+  'Thứ Sáu': 'Friday',
+  'Thứ Bảy': 'Saturday',
+  'Chủ Nhật': 'Sunday',
+};
