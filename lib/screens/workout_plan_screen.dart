@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/modern_components.dart';
 import '../models/data_models.dart';
 import '../repositories/workout_plan_repository.dart';
+import '../repositories/workout_schedule_repository.dart';
 import '../services/storage_service.dart';
 
 class WorkoutPlanScreen extends StatefulWidget {
@@ -46,6 +47,7 @@ class _WorkoutPlanScreenState extends State<WorkoutPlanScreen> {
       sessions,
       availableWeekdays: profile?.availableWeekdays,
       profile: profile,
+      availableMinutes: WorkoutScheduleRepository.workoutMinutes,
     );
     if (!mounted) return;
     setState(() {
@@ -109,10 +111,33 @@ class _WorkoutPlanScreenState extends State<WorkoutPlanScreen> {
                         ),
                         SizedBox(height: 4),
                         LocalizedText(
-                          'Chọn từng ngày để xem chi tiết bài tập của buổi tập đó.',
+                          'Lịch theo ngày rảnh và thời gian mỗi buổi. Ít buổi hoặc buổi ngắn: luân phiên bài qua các tuần để bao phủ đủ nhóm cơ và góc tập.',
                           style: AppTextTheme.bodySmall.copyWith(
                             color: AppColors.textSecondary,
                           ),
+                        ),
+                        SizedBox(height: 12),
+                        DropdownButtonFormField<int>(
+                          initialValue:
+                              WorkoutScheduleRepository.workoutMinutes,
+                          decoration: InputDecoration(
+                            labelText: tr('Thời gian mỗi buổi'),
+                          ),
+                          items: [30, 45, 60, 75, 90]
+                              .map(
+                                (minutes) => DropdownMenuItem(
+                                  value: minutes,
+                                  child: LocalizedText('$minutes phút'),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (minutes) async {
+                            if (minutes == null) return;
+                            await WorkoutScheduleRepository.setWorkoutMinutes(
+                              minutes,
+                            );
+                            await _load();
+                          },
                         ),
                       ],
                     ),
@@ -143,7 +168,14 @@ class _WorkoutPlanScreenState extends State<WorkoutPlanScreen> {
                       child: GradientButton(
                         onPressed: _plan.isEmpty
                             ? null
-                            : () => Navigator.pushNamed(context, '/schedule'),
+                            : () async {
+                                await WorkoutScheduleRepository.updateFutureSchedule(
+                                  _plan,
+                                );
+                                if (context.mounted) {
+                                  Navigator.pushNamed(context, '/schedule');
+                                }
+                              },
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -283,10 +315,14 @@ class _WorkoutPlanScreenState extends State<WorkoutPlanScreen> {
                             ),
                           ),
                           LocalizedText(
-                            '${e.sets} hiệp · ${e.reps} lần · ${e.weight.toStringAsFixed(0)} kg',
+                            '${e.sets} hiệp chính × ${e.reps} lần${e.warmupSets > 0 ? ' + 1 hiệp khởi động' : ''}',
                             style: AppTextTheme.bodySmall.copyWith(
                               color: AppColors.textSecondary,
                             ),
+                          ),
+                          LocalizedText(
+                            '${e.exercise.focusGroup} · ${e.exercise.targetArea}',
+                            style: AppTextTheme.caption,
                           ),
                         ],
                       ),

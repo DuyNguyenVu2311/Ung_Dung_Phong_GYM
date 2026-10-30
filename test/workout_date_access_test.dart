@@ -31,7 +31,12 @@ void main() {
                 'dayName': 'Buổi tập kiểm tra',
                 'date': date.toIso8601String(),
                 'exercises': [
-                  {'exerciseName': 'Squat', 'sets': 2, 'reps': 10},
+                  {
+                    'exerciseName': 'Squat',
+                    'sets': 2,
+                    'reps': 10,
+                    'warmupSets': 1,
+                  },
                 ],
               },
             ),
@@ -44,6 +49,9 @@ void main() {
         expect(find.text('Hoàn thành buổi tập'), findsOneWidget);
         expect(find.byType(Slider), findsOneWidget);
         expect(find.byType(TextField), findsOneWidget);
+        await tester.tap(find.byType(CheckboxListTile));
+        await tester.pumpAndSettle();
+        expect(find.text('0/2 hiệp hoàn thành'), findsOneWidget);
       } else {
         expect(find.text('Hoàn thành buổi tập'), findsNothing);
         expect(find.byType(Slider), findsNothing);

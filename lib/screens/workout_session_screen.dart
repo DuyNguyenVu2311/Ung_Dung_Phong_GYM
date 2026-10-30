@@ -25,6 +25,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   List<List<bool>> _completedSets = [];
   List<TextEditingController> _weightControllers = [];
   List<int> _rpeValues = [];
+  List<bool> _warmups = [];
   Timer? _timer;
   final int _restSeconds = 60;
   int _remaining = 0;
@@ -82,6 +83,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
         .map((e) => TextEditingController(text: '${e['weight'] ?? 0}'))
         .toList();
     _rpeValues = List<int>.filled(_exercises.length, 7);
+    _warmups = List<bool>.filled(_exercises.length, false);
   }
 
   @override
@@ -300,7 +302,9 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               leading: const Icon(Icons.fitness_center_rounded),
               title: LocalizedText(exercise['exerciseName'] as String? ?? ''),
               subtitle: LocalizedText(
-                '${exercise['sets'] ?? 0} hiệp × ${exercise['reps'] ?? 0} lần',
+                '${exercise['sets'] ?? 0} hiệp chính × ${exercise['reps'] ?? 0} lần'
+                '${(exercise['warmupSets'] as num? ?? 0) > 0 ? ' + 1 hiệp khởi động' : ''}'
+                '${(exercise['targetArea'] as String? ?? '').isNotEmpty ? '\n${exercise['focusGroup']} · ${exercise['targetArea']}' : ''}',
               ),
             ),
           ),
@@ -421,6 +425,11 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                       '${sets.length} hiệp × $reps lần',
                       style: AppTextTheme.bodySmall,
                     ),
+                    if ((exercise['targetArea'] as String? ?? '').isNotEmpty)
+                      LocalizedText(
+                        '${exercise['focusGroup']} · ${exercise['targetArea']}',
+                        style: AppTextTheme.caption,
+                      ),
                   ],
                 ),
               ),
@@ -441,6 +450,25 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               ),
             ],
           ),
+          if ((exercise['warmupSets'] as num? ?? 0) > 0) ...[
+            SizedBox(height: 12),
+            Material(
+              color: Colors.transparent,
+              child: CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: LocalizedText('1 hiệp khởi động · 12–15 lần nhẹ'),
+                subtitle: LocalizedText(
+                  'Dùng tải nhẹ, không đến kiệt sức. Không tính vào hiệp chính hay kỷ lục.',
+                ),
+                value: _warmups[index],
+                onChanged: (value) {
+                  if (_canTrain) {
+                    setState(() => _warmups[index] = value ?? false);
+                  }
+                },
+              ),
+            ),
+          ],
           SizedBox(height: 16),
           Container(
             padding: EdgeInsets.fromLTRB(14, 10, 8, 6),

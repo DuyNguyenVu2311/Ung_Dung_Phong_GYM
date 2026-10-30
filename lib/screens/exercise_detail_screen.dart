@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/app_localization.dart';
+import '../services/app_clock.dart';
 
 import '../models/data_models.dart';
 import '../theme/app_theme.dart';
@@ -38,7 +39,26 @@ class ExerciseDetailScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(18),
             ),
           ),
-          onPressed: () => Navigator.pushNamed(context, '/session'),
+          onPressed: () => Navigator.pushNamed(
+            context,
+            '/session',
+            arguments: {
+              'dayName': exercise.name,
+              'date': AppClock.today.toIso8601String(),
+              'exercises': [
+                {
+                  'exerciseId': exercise.id,
+                  'exerciseName': exercise.name,
+                  'focusGroup': exercise.focusGroup,
+                  'targetArea': exercise.targetArea,
+                  'sets': 2,
+                  'reps': 10,
+                  'weight': 0,
+                  'warmupSets': 1,
+                },
+              ],
+            },
+          ),
           icon: Icon(Icons.play_arrow_rounded, size: 27),
           label: LocalizedText('Bắt đầu bài tập'),
         ),

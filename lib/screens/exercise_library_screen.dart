@@ -110,7 +110,21 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: EdgeInsets.symmetric(horizontal: 20),
                   children:
-                      [null, 'Ngực', 'Lưng', 'Chân', 'Vai', 'Tay', 'Cơ bụng']
+                      [
+                            null,
+                            'Ngực',
+                            'Lưng',
+                            'Đùi trước',
+                            'Đùi sau',
+                            'Mông',
+                            'Bắp chân',
+                            'Chân',
+                            'Vai',
+                            'Tay trước',
+                            'Tay sau',
+                            'Tay',
+                            'Cơ bụng',
+                          ]
                           .map(
                             (muscle) => Padding(
                               padding: EdgeInsets.only(right: 8),

@@ -71,6 +71,19 @@ class LocalizedText extends StatelessWidget {
 }
 
 const _en = <String, String>{
+  'Thời gian mỗi buổi': 'Time per session',
+  'Đùi trước': 'Quadriceps',
+  'Đùi sau': 'Hamstrings',
+  'Mông': 'Glutes',
+  'Bắp chân': 'Calves',
+  'Tay trước': 'Biceps',
+  'Tay sau': 'Triceps',
+  'hiệp chính': 'working sets',
+  'hiệp khởi động': 'warm-up set',
+  '1 hiệp khởi động · 12–15 lần nhẹ': '1 warm-up set · 12–15 light reps',
+  'Dùng tải nhẹ, không đến kiệt sức. Không tính vào hiệp chính hay kỷ lục.': 'Use a light load, without reaching failure. Excluded from working sets and records.',
+  'Lịch theo ngày rảnh và thời gian mỗi buổi. Ít buổi hoặc buổi ngắn: luân phiên bài qua các tuần để bao phủ đủ nhóm cơ và góc tập.': 'Planned around your available days and session time. Shorter or fewer sessions rotate exercises across weeks to cover all muscle groups and movement angles.',
+  'Số bài theo thời gian bạn rảnh. Buổi ngắn hoặc ít buổi: luân phiên bài qua các tuần, không dồn toàn bộ nhóm cơ vào một buổi. Check-in hôm nay có thể giảm khối lượng.': 'Exercise count matches your available time. Shorter or fewer sessions rotate exercises across weeks. Today’s check-in may reduce the workload.',
   'Không xếp buổi tập': 'No workout scheduled',
   'Ưu tiên nghỉ ngơi': 'Prioritize rest',
   'Cường độ vừa': 'Moderate intensity',

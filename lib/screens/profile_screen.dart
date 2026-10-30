@@ -178,6 +178,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         p.sessionsPerWeek,
         availableWeekdays: p.availableWeekdays,
         profile: p,
+        availableMinutes: WorkoutScheduleRepository.workoutMinutes,
       ),
     );
     await CloudSyncService.instance.syncNow();

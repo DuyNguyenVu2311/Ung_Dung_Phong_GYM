@@ -357,7 +357,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             spacing: 16,
             runSpacing: 8,
             children: [
-              _metric(Icons.schedule_rounded, '${exercises.length * 10} phút'),
+              _metric(
+                Icons.schedule_rounded,
+                '≈ ${workout?['estimatedMinutes'] ?? exercises.length * 10} phút',
+              ),
               _metric(Icons.fitness_center_rounded, '${exercises.length} bài'),
             ],
           ),
@@ -540,7 +543,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: [45, 60, 75, 90]
+                  children: [30, 45, 60, 75, 90]
                       .map(
                         (value) => ChoiceChip(
                           selected: minutes == value,
@@ -579,9 +582,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     if (result == null) return;
     await StorageService.instance.saveDailyCheckIn(result);
+    await WorkoutScheduleRepository.ensureCurrentWeek();
     await CloudSyncService.instance.syncNow();
     if (!mounted) return;
-    setState(() => _checkIn = result);
+    setState(_load);
     await _showCheckInPlan(result);
   }
 

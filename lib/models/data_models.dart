@@ -101,6 +101,8 @@ class Exercise {
   final int durationMinutes;
   final List<String> instructions;
   final String safetyTip;
+  final String focusGroup;
+  final String targetArea;
 
   Exercise({
     required this.id,
@@ -113,6 +115,8 @@ class Exercise {
     this.durationMinutes = 12,
     this.instructions = const [],
     this.safetyTip = 'Giữ nhịp thở đều và dừng lại nếu cảm thấy đau.',
+    this.focusGroup = '',
+    this.targetArea = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -126,6 +130,8 @@ class Exercise {
     'durationMinutes': durationMinutes,
     'instructions': instructions,
     'safetyTip': safetyTip,
+    'focusGroup': focusGroup,
+    'targetArea': targetArea,
   };
 
   factory Exercise.fromJson(Map<String, dynamic> json) => Exercise(
@@ -140,6 +146,8 @@ class Exercise {
     instructions: List<String>.from(json['instructions'] as List? ?? []),
     safetyTip:
         json['safetyTip'] ?? 'Giữ nhịp thở đều và dừng lại nếu cảm thấy đau.',
+    focusGroup: json['focusGroup'] as String? ?? '',
+    targetArea: json['targetArea'] as String? ?? '',
   );
 }
 
@@ -311,9 +319,9 @@ class DailyCheckIn {
   int get suggestedMinutes {
     if (shouldRest) return 0;
     if (recoveryOnly) {
-      return availableMinutes.clamp(20, 45).toInt();
+      return availableMinutes.clamp(15, 45).toInt();
     }
-    return availableMinutes.clamp(45, 90).toInt();
+    return availableMinutes.clamp(15, 90).toInt();
   }
 
   String get energyLabel => const [
@@ -478,12 +486,14 @@ class PlanExercise {
   final int sets;
   final int reps;
   final double weight;
+  final int warmupSets;
 
   PlanExercise({
     required this.exercise,
     required this.sets,
     required this.reps,
     required this.weight,
+    this.warmupSets = 0,
   });
 }
 

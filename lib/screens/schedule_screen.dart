@@ -66,6 +66,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
               sessions,
               availableWeekdays: profile?.availableWeekdays,
               profile: profile,
+              availableMinutes: WorkoutScheduleRepository.workoutMinutes,
             ),
           );
     if (!mounted) return;
@@ -128,6 +129,34 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                               ],
                             ),
                             SizedBox(height: 20),
+                            DropdownButtonFormField<int>(
+                              initialValue:
+                                  WorkoutScheduleRepository.workoutMinutes,
+                              decoration: InputDecoration(
+                                labelText: tr('Thời gian mỗi buổi'),
+                              ),
+                              items: [30, 45, 60, 75, 90]
+                                  .map(
+                                    (minutes) => DropdownMenuItem(
+                                      value: minutes,
+                                      child: LocalizedText('$minutes phút'),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (minutes) async {
+                                if (minutes == null) return;
+                                await WorkoutScheduleRepository.setWorkoutMinutes(
+                                  minutes,
+                                );
+                                await _load();
+                              },
+                            ),
+                            SizedBox(height: 8),
+                            LocalizedText(
+                              'Số bài theo thời gian bạn rảnh. Buổi ngắn hoặc ít buổi: luân phiên bài qua các tuần, không dồn toàn bộ nhóm cơ vào một buổi. Check-in hôm nay có thể giảm khối lượng.',
+                              style: AppTextTheme.caption,
+                            ),
+                            SizedBox(height: 16),
                             _weekStrip(),
                             SizedBox(height: 24),
                             Row(
@@ -388,38 +417,42 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       builder: (context) => SafeArea(
         child: Padding(
           padding: EdgeInsets.fromLTRB(20, 4, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              LocalizedText(
-                'Lịch ngày ${date.day}/${date.month}/${date.year}',
-                style: AppTextTheme.headlineMedium,
-              ),
-              SizedBox(height: 6),
-              LocalizedText(
-                'Ngày đã qua nên nội dung được khóa và chỉ có thể xem.',
-                style: AppTextTheme.bodySmall,
-              ),
-              SizedBox(height: 16),
-              if (exercises.isEmpty)
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 LocalizedText(
-                  'Ngày nghỉ và phục hồi',
-                  style: AppTextTheme.bodyLarge,
-                )
-              else
-                ...exercises.map((raw) {
-                  final item = Map<String, dynamic>.from(raw as Map);
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.fitness_center_rounded),
-                    title: LocalizedText(item['exerciseName'] as String? ?? ''),
-                    subtitle: LocalizedText(
-                      '${item['sets'] ?? 0} hiệp × ${item['reps'] ?? 0} lần',
-                    ),
-                  );
-                }),
-            ],
+                  'Lịch ngày ${date.day}/${date.month}/${date.year}',
+                  style: AppTextTheme.headlineMedium,
+                ),
+                SizedBox(height: 6),
+                LocalizedText(
+                  'Ngày đã qua nên nội dung được khóa và chỉ có thể xem.',
+                  style: AppTextTheme.bodySmall,
+                ),
+                SizedBox(height: 16),
+                if (exercises.isEmpty)
+                  LocalizedText(
+                    'Ngày nghỉ và phục hồi',
+                    style: AppTextTheme.bodyLarge,
+                  )
+                else
+                  ...exercises.map((raw) {
+                    final item = Map<String, dynamic>.from(raw as Map);
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.fitness_center_rounded),
+                      title: LocalizedText(
+                        item['exerciseName'] as String? ?? '',
+                      ),
+                      subtitle: LocalizedText(
+                        '${item['sets'] ?? 0} hiệp × ${item['reps'] ?? 0} lần',
+                      ),
+                    );
+                  }),
+              ],
+            ),
           ),
         ),
       ),

@@ -96,6 +96,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           _days.length,
           availableWeekdays: profile.availableWeekdays,
           profile: profile,
+          availableMinutes: WorkoutScheduleRepository.workoutMinutes,
         ),
       );
       if (mounted) widget.onCompleted();

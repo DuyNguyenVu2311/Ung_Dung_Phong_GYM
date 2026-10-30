@@ -92,6 +92,7 @@ void main() {
 
     await pumpScreen(const HomeScreen());
     await pumpScreen(const ScheduleScreen());
+    await pumpScreen(const WorkoutPlanScreen());
     await pumpScreen(const ExerciseLibraryScreen());
     await pumpScreen(const ProfileScreen());
     await pumpScreen(const GoalScreen());
