@@ -384,7 +384,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               label: LocalizedText(
                 workout == null
                     ? (_schedule.isEmpty ? 'Tạo lịch tập' : 'Xem lịch tập')
-                    : 'Bắt đầu ngay',
+                    : AppClock.sameDay(
+                        DateTime.parse(workout['date'] as String),
+                        AppClock.now(),
+                      )
+                    ? 'Bắt đầu ngay'
+                    : 'Xem trước lịch tập',
                 style: AppTextTheme.labelLarge.copyWith(
                   color: AppColors.textInverse,
                 ),

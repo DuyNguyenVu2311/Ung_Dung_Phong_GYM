@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/app_localization.dart';
+import '../services/app_clock.dart';
 
 import '../models/data_models.dart';
 import '../repositories/workout_schedule_repository.dart';
@@ -30,18 +31,34 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   bool _loaded = false;
   final DateTime _startedAt = DateTime.now();
   String? _branch;
+  DateTime? _scheduledDate;
+  Timer? _dayTimer;
+  DateTime _visibleDay = AppClock.today;
+  bool get _canTrain => AppClock.sameDay(
+    _scheduledDate ?? AppClock.inVietnam(_startedAt),
+    AppClock.now(),
+  );
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_loaded) return;
     _loaded = true;
+    _dayTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final today = AppClock.today;
+      if (mounted && !AppClock.sameDay(_visibleDay, today)) {
+        setState(() => _visibleDay = today);
+      }
+    });
     final membership = StorageService.instance.loadMembership();
     if (['Thủ Đức', 'Bình Thạnh', 'Quận 1'].contains(membership.branchName)) {
       _branch = membership.branchName;
     }
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map) {
+      _scheduledDate = DateTime.tryParse(args['date'] as String? ?? '');
+      // A scheduled workout must have a valid date before it can be recorded.
+      _scheduledDate ??= DateTime(1970);
       _dayName = args['dayName'] as String? ?? 'Buổi tập';
       _sessionId =
           args['id'] as String? ??
@@ -69,6 +86,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
   @override
   void dispose() {
+    _dayTimer?.cancel();
     _timer?.cancel();
     for (final controller in _weightControllers) {
       controller.dispose();
@@ -84,6 +102,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   );
 
   void _toggleSet(int exerciseIndex, int setIndex) {
+    if (!_canTrain) return;
     setState(
       () => _completedSets[exerciseIndex][setIndex] =
           !_completedSets[exerciseIndex][setIndex],
@@ -114,6 +133,10 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   }
 
   Future<void> _finish() async {
+    if (!_canTrain) {
+      setState(() {});
+      return;
+    }
     final logs = <ExerciseLog>[];
     final previousBest = <String, double>{};
     for (final session in StorageService.instance.loadWorkoutSessions()) {
@@ -174,6 +197,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   @override
   Widget build(BuildContext context) {
     AppSettingsScope.watch(context);
+    if (!_canTrain) return _preview();
     final progress = _totalSets == 0 ? 0.0 : _doneSets / _totalSets;
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -241,6 +265,43 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               itemCount: _exercises.length,
               separatorBuilder: (_, _) => SizedBox(height: 16),
               itemBuilder: (_, index) => _exerciseCard(index),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _preview() {
+    final future =
+        _scheduledDate != null &&
+        AppClock.day(_scheduledDate!).isAfter(AppClock.today);
+    return Scaffold(
+      appBar: AppBar(title: LocalizedText(_dayName)),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          LocalizedText(
+            future ? 'Xem trước lịch tập' : 'Lịch tập chỉ xem',
+            style: AppTextTheme.headlineMedium,
+          ),
+          const SizedBox(height: 8),
+          if (_scheduledDate != null)
+            LocalizedText(AppClock.date(_scheduledDate!)),
+          const SizedBox(height: 8),
+          LocalizedText(
+            future
+                ? 'Chưa đến ngày tập. Bạn chỉ có thể bắt đầu và ghi kết quả vào đúng ngày này.'
+                : 'Chỉ có thể ghi kết quả cho buổi tập hôm nay.',
+          ),
+          const SizedBox(height: 16),
+          ..._exercises.map(
+            (exercise) => ListTile(
+              leading: const Icon(Icons.fitness_center_rounded),
+              title: LocalizedText(exercise['exerciseName'] as String? ?? ''),
+              subtitle: LocalizedText(
+                '${exercise['sets'] ?? 0} hiệp × ${exercise['reps'] ?? 0} lần',
+              ),
             ),
           ),
         ],

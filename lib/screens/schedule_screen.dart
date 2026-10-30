@@ -314,7 +314,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                     if (!isRest) ...[
                       SizedBox(height: 10),
                       GestureDetector(
-                        onTap: isPast ? null : () => _cycleStatus(day),
+                        onTap: isToday ? () => _cycleStatus(day) : null,
                         child: _statusPill(
                           _statusIcon(status),
                           _statusLabel(status),
@@ -336,6 +336,15 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                       SizedBox(height: 7),
                       LocalizedText(
                         'Chỉ xem - ngày đã qua',
+                        style: AppTextTheme.caption.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                    if (date != null && !isPast && !isToday) ...[
+                      SizedBox(height: 7),
+                      LocalizedText(
+                        'Chưa đến ngày - chỉ xem trước',
                         style: AppTextTheme.caption.copyWith(
                           color: AppColors.textMuted,
                         ),
@@ -430,6 +439,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   }
 
   Future<void> _cycleStatus(Map<String, dynamic> day) async {
+    final date = DateTime.tryParse(day['date'] as String? ?? '');
+    if (date == null || !AppClock.sameDay(date, AppClock.now())) return;
     final status = day['status'] as String? ?? 'planned';
     final next = status == 'planned'
         ? 'in_progress'
