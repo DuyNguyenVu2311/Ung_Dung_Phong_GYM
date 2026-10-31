@@ -129,9 +129,10 @@ class StorageService {
 
   Future<void> addWorkoutSession(WorkoutSession session) async {
     final current = loadWorkoutSessions();
+    current.removeWhere((item) => item.id == session.id);
     current.add(session);
     await saveWorkoutSessions(current);
-  }
+  } // Thay đổi này bảo đảm mỗi ID chỉ có một buổi tập. Nếu lưu lại cùng ID, bản mới thay thế bản cũ; đồng thời loại các bản trùng ID đó nếu đã có.
 
   Future<void> saveDailyCheckIn(DailyCheckIn checkIn) async {
     await _prefs?.setString(_kDailyCheckIn, jsonEncode(checkIn.toJson()));

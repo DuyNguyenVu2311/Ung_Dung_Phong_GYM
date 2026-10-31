@@ -5,6 +5,7 @@ import 'package:fit_gym/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fit_gym/models/data_models.dart';
 
 import 'font_test_support.dart';
 
@@ -14,6 +15,56 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await StorageService.instance.init();
+  });
+
+  testWidgets('Recorded workout opens in read-only mode', (tester) async {
+    final storage = StorageService.instance;
+    final today = AppClock.today;
+
+    await storage.addWorkoutSession(
+      WorkoutSession(
+        id: 'recorded_day',
+        dayName: 'Buổi đã tập',
+        date: DateTime.now(),
+        logs: [],
+        branchName: 'Thủ Đức',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        onGenerateRoute: (_) => MaterialPageRoute<void>(
+          settings: RouteSettings(
+            arguments: {
+              'id': 'recorded_day',
+              'dayName': 'Buổi đã tập',
+              'date': today.toIso8601String(),
+              'exercises': [
+                {'exerciseName': 'Squat', 'sets': 2, 'reps': 10},
+              ],
+            },
+          ),
+          builder: (_) => const WorkoutSessionScreen(),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hoàn thành buổi tập'), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byType(Slider), findsNothing);
+    expect(find.text('Squat'), findsOneWidget);
+    expect(
+      find.text(
+        'Buổi tập này đã được ghi nhận. Bạn có thể xem kết quả trong lịch sử tập luyện.',
+      ),
+      findsOneWidget,
+    );
+    expect(storage.loadWorkoutSessions(), hasLength(1));
+
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   for (final offset in [-1, 0, 1]) {
