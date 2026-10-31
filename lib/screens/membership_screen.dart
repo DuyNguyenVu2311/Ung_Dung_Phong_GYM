@@ -6,7 +6,6 @@ import '../theme/app_theme.dart';
 import 'checkout_screen.dart';
 import '../services/payment_format.dart';
 import '../services/storage_service.dart';
-import '../models/data_models.dart';
 import '../services/app_clock.dart';
 
 class MembershipScreen extends StatefulWidget {
@@ -24,6 +23,15 @@ class _MembershipScreenState extends State<MembershipScreen> {
   @override
   void initState() {
     super.initState();
+    final cached = StorageService.instance.loadMembership();
+    if (cached.isCurrent) {
+      _contract = {
+        'id': cached.id,
+        'name': cached.name,
+        'branch_name': cached.branchName,
+        'end_date': cached.endDate.toIso8601String().split('T').first,
+      };
+    }
     _load();
   }
 
@@ -34,13 +42,23 @@ class _MembershipScreenState extends State<MembershipScreen> {
       return;
     }
     try {
-      final contracts = await client
-          .from('memberships')
-          .select()
-          .eq('user_id', user.id)
-          .eq('active', true)
-          .order('end_date', ascending: false)
-          .limit(1);
+      final contract = await StorageService.instance.refreshMembership(
+        () async => await client
+            .from('memberships')
+            .select()
+            .eq('user_id', user.id)
+            .eq('active', true)
+            .gte('end_date', AppClock.today.toIso8601String().split('T').first)
+            .lte(
+              'start_date',
+              AppClock.today.toIso8601String().split('T').first,
+            )
+            .order('end_date', ascending: false)
+            .limit(1),
+        userId: user.id,
+      );
+      if (!mounted || SupabaseService.currentUser?.id != user.id) return;
+      setState(() => _contract = contract);
       final packages = await client
           .from('gym_packages')
           .select()
@@ -51,24 +69,8 @@ class _MembershipScreenState extends State<MembershipScreen> {
           .select('*,gym_packages(name)')
           .eq('user_id', user.id)
           .order('created_at', ascending: false);
-      if (contracts.isNotEmpty) {
-        final item = contracts.first;
-        await StorageService.instance.saveMembership(
-          MembershipPlan(
-            id: item['id'] as String,
-            name: item['name'] as String,
-            branchName: item['branch_name'] as String,
-            startDate: DateTime.parse(item['start_date'] as String),
-            endDate: DateTime.parse(item['end_date'] as String),
-            usedSessions: (item['used_sessions'] as num).toInt(),
-            totalSessions: (item['total_sessions'] as num).toInt(),
-            price: (item['price'] as num).toInt(),
-          ),
-        );
-      }
-      if (!mounted) return;
+      if (!mounted || SupabaseService.currentUser?.id != user.id) return;
       setState(() {
-        _contract = contracts.isEmpty ? null : contracts.first;
         _packages = packages;
         final branches = packages
             .map((p) => p['branch_name'] as String)
@@ -137,9 +139,6 @@ class _MembershipScreenState extends State<MembershipScreen> {
                               style: Theme.of(context).textTheme.headlineSmall,
                             ),
                             LocalizedText(contract['branch_name'] as String),
-                            LocalizedText(
-                              'Đã tập: ${contract['used_sessions']} buổi',
-                            ),
                             SizedBox(height: 16),
                             LocalizedText('Hết hạn: ${contract['end_date']}'),
                             LocalizedText(
@@ -180,7 +179,16 @@ class _MembershipScreenState extends State<MembershipScreen> {
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: LocalizedText(
-                        'Yêu cầu gia hạn đang chờ phòng tập xác nhận thanh toán.',
+                        _requests.any(
+                              (r) =>
+                                  r['status'] == 'pending' &&
+                                  [
+                                    'momo_business',
+                                    'legacy_review',
+                                  ].contains(r['payment_provider']),
+                            )
+                            ? 'Bạn có đơn MoMo đang chờ xử lý. Mở đơn trong lịch sử để tiếp tục hoặc kiểm tra trạng thái.'
+                            : 'Yêu cầu gia hạn đang chờ phòng tập xác nhận thanh toán.',
                       ),
                     ),
                   if (_packages.isEmpty && _error == null)
@@ -215,7 +223,12 @@ class _MembershipScreenState extends State<MembershipScreen> {
                   ),
                   ..._requests.map(
                     (request) => ListTile(
-                      onTap: request['status'] != 'pending'
+                      onTap:
+                          request['status'] != 'pending' &&
+                              ![
+                                'momo_business',
+                                'legacy_review',
+                              ].contains(request['payment_provider'])
                           ? null
                           : () async {
                               await Navigator.push(
@@ -245,6 +258,16 @@ class _MembershipScreenState extends State<MembershipScreen> {
                       trailing: LocalizedText(switch (request['status']) {
                         'approved' => 'Đã xác nhận',
                         'rejected' => 'Từ chối',
+                        'expired' => 'Đã hết hạn',
+                        'cancelled' => 'Đã hủy',
+                        'pending'
+                            when request['payment_provider'] ==
+                                'legacy_review' =>
+                          'Cần phòng tập xác minh',
+                        'pending'
+                            when request['payment_provider'] ==
+                                'momo_business' =>
+                          'Chờ MoMo xác nhận',
                         _ => 'Chờ xác nhận',
                       }),
                     ),

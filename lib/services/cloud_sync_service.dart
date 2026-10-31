@@ -157,29 +157,16 @@ class CloudSyncService {
       }).toList();
       await storage.saveWorkoutSessions(sessions);
 
-      final membershipRows = await client
-          .from('memberships')
-          .select()
-          .eq('user_id', userId)
-          .eq('active', true)
-          .order('end_date', ascending: false)
-          .limit(1);
-      if (membershipRows.isNotEmpty) {
-        final item = membershipRows.first;
-        await storage.saveMembership(
-          MembershipPlan(
-            id: item['id'] as String,
-            name: item['name'] as String,
-            branchName: item['branch_name'] as String,
-            startDate: DateTime.parse(item['start_date'] as String),
-            endDate: DateTime.parse(item['end_date'] as String),
-            usedSessions: (item['used_sessions'] as num).toInt(),
-            totalSessions: (item['total_sessions'] as num).toInt(),
-            price: (item['price'] as num).toInt(),
-            active: item['active'] as bool? ?? true,
-          ),
-        );
-      }
+      await storage.refreshMembership(
+        () async => await client
+            .from('memberships')
+            .select()
+            .eq('user_id', userId)
+            .eq('active', true)
+            .order('end_date', ascending: false)
+            .limit(1),
+        userId: userId,
+      );
 
       final noticeRows = await client
           .from('app_notifications')

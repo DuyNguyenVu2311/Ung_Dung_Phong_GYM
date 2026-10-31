@@ -58,7 +58,8 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
       }
     });
     final membership = StorageService.instance.loadMembership();
-    if (['Thủ Đức', 'Bình Thạnh', 'Quận 1'].contains(membership.branchName)) {
+    if (membership.isCurrent &&
+        ['Thủ Đức', 'Bình Thạnh', 'Quận 1'].contains(membership.branchName)) {
       _branch = membership.branchName;
     }
     final args = ModalRoute.of(context)?.settings.arguments;
