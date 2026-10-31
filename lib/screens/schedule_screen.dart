@@ -342,13 +342,10 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                     ),
                     if (!isRest) ...[
                       SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: isToday ? () => _cycleStatus(day) : null,
-                        child: _statusPill(
-                          _statusIcon(status),
-                          _statusLabel(status),
-                          color,
-                        ),
+                      _statusPill(
+                        _statusIcon(status),
+                        _statusLabel(status),
+                        color,
                       ),
                     ],
                     if (isToday) ...[
@@ -469,20 +466,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       date.month,
       date.day,
     ).isBefore(DateTime(today.year, today.month, today.day));
-  }
-
-  Future<void> _cycleStatus(Map<String, dynamic> day) async {
-    final date = DateTime.tryParse(day['date'] as String? ?? '');
-    if (date == null || !AppClock.sameDay(date, AppClock.now())) return;
-    final status = day['status'] as String? ?? 'planned';
-    final next = status == 'planned'
-        ? 'in_progress'
-        : status == 'in_progress'
-        ? 'completed'
-        : 'planned';
-    await WorkoutScheduleRepository.setStatus(day['id'] as String, next);
-    if (!mounted) return;
-    setState(() => day['status'] = next);
   }
 
   Widget _statusPill(IconData icon, String label, Color color) => Container(

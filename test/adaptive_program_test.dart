@@ -146,6 +146,28 @@ void main() {
       (reduced[now.weekday - 1]['exercises'] as List).length,
       lessThanOrEqualTo(3),
     );
+    final sessionId = today['id'] as String;
+
+    await StorageService.instance.addWorkoutSession(
+      WorkoutSession(
+        id: sessionId,
+        dayName: today['dayName'] as String,
+        date: DateTime.now(),
+        branchName: 'Tập tại nhà',
+        logs: [
+          ExerciseLog(
+            id: '${sessionId}_log',
+            sessionId: sessionId,
+            exerciseName: 'Squat',
+            sets: 2,
+            reps: 10,
+            weight: 20,
+            rpe: 7,
+            isPersonalRecord: false,
+          ),
+        ],
+      ),
+    );
     await WorkoutScheduleRepository.setStatus(
       today['id'] as String,
       'completed',

@@ -249,10 +249,27 @@ class WorkoutScheduleRepository {
   static List<Map<String, dynamic>> loadSchedule() {
     final s = StorageService.getString(_kSchedule);
     if (s == null || s.isEmpty) return [];
+
     try {
       final decoded = jsonDecode(s);
       if (decoded is! List) return [];
-      return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+      final recordedIds = StorageService.instance
+          .loadWorkoutSessions()
+          .map((session) => session.id)
+          .toSet();
+
+      return decoded.map((raw) {
+        final day = Map<String, dynamic>.from(raw as Map);
+
+        if (recordedIds.contains(day['id'])) {
+          day['status'] = 'completed';
+        } else if (day['status'] == 'completed') {
+          day['status'] = day['isRest'] == true ? 'rest_day' : 'planned';
+        }
+
+        return day;
+      }).toList();
     } catch (_) {
       return [];
     }
@@ -260,6 +277,17 @@ class WorkoutScheduleRepository {
 
   /// Cập nhật trạng thái một buổi tập.
   static Future<void> setStatus(String id, String status) async {
+    final hasRecordedSession = StorageService.instance
+        .loadWorkoutSessions()
+        .any((session) => session.id == id);
+
+    if (status == 'completed' && !hasRecordedSession) {
+      throw StateError('Chưa có bản ghi buổi tập để đánh dấu hoàn thành.');
+    }
+
+    if (hasRecordedSession && status != 'completed') {
+      throw StateError('Buổi tập đã ghi nhận phải giữ trạng thái hoàn thành.');
+    }
     final list = loadSchedule();
     final idx = list.indexWhere((e) => e['id'] == id);
     if (idx >= 0) {
