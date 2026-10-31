@@ -67,6 +67,66 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  for (final entry in <String, double?>{
+    '-5': null,
+    'NaN': null,
+    'Infinity': null,
+    'abc': null,
+    '': null,
+    '100000': null,
+    '0': 0,
+    '12.5': 12.5,
+    '12,5': 12.5,
+  }.entries) {
+    testWidgets('Workout weight input "${entry.key}"', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          onGenerateRoute: (_) => MaterialPageRoute<void>(
+            settings: RouteSettings(
+              arguments: {
+                'id': 'negative_weight',
+                'dayName': 'Kiểm tra số kg',
+                'date': AppClock.today.toIso8601String(),
+                'exercises': [
+                  {'exerciseName': 'Squat', 'sets': 1, 'reps': 10, 'weight': 0},
+                ],
+              },
+            ),
+            builder: (_) => const WorkoutSessionScreen(),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Chọn nơi tập để không bị chặn bởi kiểm tra thiếu chi nhánh.
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tập tại nhà').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), entry.key);
+      await tester.tap(find.text('Hiệp 1'));
+      await tester.pump();
+
+      await tester.tap(find.text('Hoàn thành buổi tập'));
+      await tester.pumpAndSettle();
+
+      final saved = StorageService.instance.loadWorkoutSessions();
+
+      // Dọn màn hình để hủy timer nghỉ trước khi kiểm tra kết quả.
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      if (entry.value == null) {
+        expect(saved, isEmpty);
+      } else {
+        expect(saved, hasLength(1));
+        expect(saved.single.logs, hasLength(1));
+        expect(saved.single.logs.single.weight, entry.value);
+      }
+    });
+  }
   for (final offset in [-1, 0, 1]) {
     testWidgets('Scheduled day offset $offset only permits today to train', (
       tester,
