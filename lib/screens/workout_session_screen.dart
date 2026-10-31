@@ -30,16 +30,22 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   final int _restSeconds = 60;
   int _remaining = 0;
   bool _loaded = false;
+  bool _saving = false;
   final DateTime _startedAt = DateTime.now();
   String? _branch;
   DateTime? _scheduledDate;
   Timer? _dayTimer;
   DateTime _visibleDay = AppClock.today;
-  bool get _canTrain => AppClock.sameDay(
-    _scheduledDate ?? AppClock.inVietnam(_startedAt),
-    AppClock.now(),
-  );
+  bool get _alreadyRecorded => StorageService.instance
+      .loadWorkoutSessions()
+      .any((session) => session.id == _sessionId);
 
+  bool get _canTrain =>
+      !_alreadyRecorded &&
+      AppClock.sameDay(
+        _scheduledDate ?? AppClock.inVietnam(_startedAt),
+        AppClock.now(),
+      );
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -135,6 +141,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   }
 
   Future<void> _finish() async {
+    if (_saving) return;
     if (!_canTrain) {
       setState(() {});
       return;
@@ -180,20 +187,39 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
       );
       return;
     }
-    await StorageService.instance.addWorkoutSession(
-      WorkoutSession(
-        id: _sessionId,
-        dayName: _dayName,
-        date: DateTime.now(),
-        logs: logs,
-        branchName: _branch!,
-        checkedInAt: _startedAt,
-      ),
-    );
-    await CloudSyncService.instance.syncNow();
-    await WorkoutScheduleRepository.setStatus(_sessionId, 'completed');
-    if (!mounted) return;
-    Navigator.pop(context);
+    setState(() => _saving = true);
+
+    try {
+      await StorageService.instance.addWorkoutSession(
+        WorkoutSession(
+          id: _sessionId,
+          dayName: _dayName,
+          date: DateTime.now(),
+          logs: logs,
+          branchName: _branch!,
+          checkedInAt: _startedAt,
+        ),
+      );
+
+      await WorkoutScheduleRepository.setStatus(_sessionId, 'completed');
+      await CloudSyncService.instance.syncNow();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: LocalizedText(
+            'Chưa hoàn tất lưu buổi tập. Vui lòng thử lại.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
   }
 
   @override
@@ -230,7 +256,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               borderRadius: BorderRadius.circular(18),
             ),
           ),
-          onPressed: _finish,
+          onPressed: _saving ? null : _finish,
           icon: Icon(Icons.flag_rounded),
           label: LocalizedText('Hoàn thành buổi tập'),
         ),
@@ -292,7 +318,9 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
             LocalizedText(AppClock.date(_scheduledDate!)),
           const SizedBox(height: 8),
           LocalizedText(
-            future
+            _alreadyRecorded
+                ? 'Buổi tập này đã được ghi nhận. Bạn có thể xem kết quả trong lịch sử tập luyện.'
+                : future
                 ? 'Chưa đến ngày tập. Bạn chỉ có thể bắt đầu và ghi kết quả vào đúng ngày này.'
                 : 'Chỉ có thể ghi kết quả cho buổi tập hôm nay.',
           ),

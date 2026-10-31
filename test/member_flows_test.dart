@@ -44,6 +44,32 @@ void main() {
     AppSettingsService.themeMode.value = ThemeMode.dark;
     AppSettingsService.language.value = 'vi';
   });
+  test('Saving the same session ID replaces its previous record', () async {
+    final storage = StorageService.instance;
+    final date = DateTime(2026, 10, 31);
+
+    WorkoutSession session(String id, String name) => WorkoutSession(
+      id: id,
+      dayName: name,
+      date: date,
+      logs: [],
+      branchName: 'Thủ Đức',
+    );
+
+    await storage.addWorkoutSession(session('one', 'Buổi ban đầu'));
+    await storage.addWorkoutSession(session('two', 'Buổi khác'));
+    await storage.addWorkoutSession(session('one', 'Buổi cập nhật'));
+
+    final saved = storage.loadWorkoutSessions();
+
+    expect(saved, hasLength(2));
+    expect(saved.where((item) => item.id == 'one'), hasLength(1));
+    expect(
+      saved.singleWhere((item) => item.id == 'one').dayName,
+      'Buổi cập nhật',
+    );
+    expect(saved.singleWhere((item) => item.id == 'two').dayName, 'Buổi khác');
+  }); //Test này kiểm tra cả việc thay thế buổi cùng ID và giữ nguyên buổi khác.
   test(
     'Accounts keep separate profiles and start with no membership',
     () async {
