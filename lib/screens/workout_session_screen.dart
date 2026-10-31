@@ -158,7 +158,22 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
       final completed = _completedSets[i].where((done) => done).length;
       if (completed == 0) continue;
       final exerciseName = _exercises[i]['exerciseName'] as String? ?? '';
-      final weight = double.tryParse(_weightControllers[i].text) ?? 0;
+      final weightText = _weightControllers[i].text.trim().replaceAll(',', '.');
+      final weight = double.tryParse(weightText);
+
+      if (weight == null ||
+          !weight.isFinite ||
+          weight < 0 ||
+          weight > 99999.99) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: LocalizedText(
+              'Số kg của $exerciseName phải là số từ 0 đến 99999,99.',
+            ),
+          ),
+        );
+        return;
+      }
       logs.add(
         ExerciseLog(
           id: '${_sessionId}_$i',
