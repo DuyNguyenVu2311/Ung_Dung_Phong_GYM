@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/app_localization.dart';
-
+import '../services/app_clock.dart';
 import '../models/data_models.dart';
 import '../services/storage_service.dart';
 import '../services/cloud_sync_service.dart';
@@ -92,15 +92,38 @@ class _ProgressStatisticsScreenState extends State<ProgressStatisticsScreen> {
     AppSettingsScope.watch(context);
     final sessions = StorageService.instance.loadWorkoutSessions();
     final profile = StorageService.instance.loadProfile();
+    final today = AppClock.today;
+    final weekStart = DateTime(
+      today.year,
+      today.month,
+      today.day - (today.weekday - 1),
+    );
+    final weekEnd = DateTime(
+      weekStart.year,
+      weekStart.month,
+      weekStart.day + 7,
+    );
+
     final volumes = List<double>.filled(7, 0);
+    var totalVolume = 0.0;
+
     for (final session in sessions) {
-      final index = session.date.weekday - 1;
-      volumes[index] += session.logs.fold(
+      final volume = session.logs.fold<double>(
         0,
         (sum, log) => sum + log.sets * log.reps * log.weight,
       );
+
+      // Tổng khối lượng vẫn tính toàn bộ lịch sử.
+      totalVolume += volume;
+
+      // Biểu đồ dùng ngày Việt Nam, từ thứ Hai đến hết Chủ nhật.
+      final performedDay = AppClock.day(AppClock.inVietnam(session.date));
+      if (performedDay.isBefore(weekStart) || !performedDay.isBefore(weekEnd)) {
+        continue;
+      }
+
+      volumes[performedDay.weekday - 1] += volume;
     }
-    final totalVolume = volumes.fold<double>(0, (sum, value) => sum + value);
     final maxVolume = volumes.fold<double>(
       1,
       (max, value) => value > max ? value : max,
