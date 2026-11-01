@@ -11,6 +11,7 @@ class StorageService {
   static final StorageService instance = StorageService._internal();
 
   static SharedPreferences? _prefs;
+  int _userGeneration = 0;
   static Map<String, Map<String, int>>? _syncPendingCache;
   Future<void>? _writeTail;
 
@@ -35,6 +36,7 @@ class StorageService {
   Future<void> bindUser(String userId) => _serializeWrites(() async {
     final prefs = _prefs;
     if (prefs == null || prefs.getString('active_user') == userId) return;
+    _userGeneration++;
     final previous = prefs.getString('active_user') ?? 'legacy';
     final keys = prefs
         .getKeys()
@@ -573,6 +575,57 @@ class StorageService {
     await _prefs?.setString(_kMembership, jsonEncode(value.toJson()));
   }
 
+  /// Only a successful query may replace/clear membership cache. A thrown
+  /// request leaves it intact; late results cannot cross account boundaries.
+  Future<Map<String, dynamic>?> refreshMembership(
+    Future<List<Map<String, dynamic>>> Function() fetch, {
+    required String userId,
+  }) async {
+    final generation = _userGeneration;
+    final rows = await fetch();
+    bool sameAccount() =>
+        generation == _userGeneration &&
+        _prefs?.getString('active_user') == userId;
+    if (!sameAccount()) return null;
+    Map<String, dynamic>? selected;
+    MembershipPlan? plan;
+    for (final row in rows) {
+      final candidate = MembershipPlan(
+        id: row['id'] as String,
+        name: row['name'] as String,
+        branchName: row['branch_name'] as String,
+        startDate: DateTime.parse(row['start_date'] as String),
+        endDate: DateTime.parse(row['end_date'] as String),
+        usedSessions: (row['used_sessions'] as num).toInt(),
+        totalSessions: (row['total_sessions'] as num).toInt(),
+        price: (row['price'] as num).toInt(),
+        active: row['active'] == true,
+      );
+      if (candidate.isCurrent) {
+        selected = row;
+        plan = candidate;
+        break;
+      }
+    }
+    if (plan == null) {
+      await _prefs?.remove(_kMembership);
+    } else {
+      await saveMembership(plan);
+    }
+    if (sameAccount()) {
+      final notices = loadNotices();
+      final retained = notices
+          .where(
+            (notice) =>
+                notice.type != 'expiry' ||
+                (plan != null && notice.id == 'expiry_${plan.id}'),
+          )
+          .toList();
+      if (retained.length != notices.length) await saveNotices(retained);
+    }
+    return selected;
+  }
+
   List<AppNotice> loadNotices() {
     final values = _prefs?.getStringList(_kNotices) ?? [];
     final notices = <AppNotice>[];
@@ -599,7 +652,7 @@ class StorageService {
 
   Future<void> ensureMembershipNotices() async {
     final membership = loadMembership();
-    if (membership.id.isEmpty) return;
+    if (!membership.isCurrent) return;
     final notices = loadNotices();
     if (membership.remainingDays <= 7 &&
         !notices.any((item) => item.type == 'expiry')) {

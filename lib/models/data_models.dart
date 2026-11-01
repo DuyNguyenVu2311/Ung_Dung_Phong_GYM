@@ -420,6 +420,16 @@ class MembershipPlan {
     return end.difference(start).inDays.clamp(0, 9999).toInt();
   }
 
+  bool get isCurrent =>
+      active &&
+      id.isNotEmpty &&
+      !AppClock.today.isBefore(
+        DateTime(startDate.year, startDate.month, startDate.day),
+      ) &&
+      !AppClock.today.isAfter(
+        DateTime(endDate.year, endDate.month, endDate.day),
+      );
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,

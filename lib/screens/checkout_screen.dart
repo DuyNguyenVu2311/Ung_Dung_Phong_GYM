@@ -9,6 +9,7 @@ import '../services/app_localization.dart';
 import '../services/supabase_service.dart';
 import '../services/payment_format.dart';
 import '../services/payment_qr_service.dart';
+import '../services/payment_status_service.dart';
 import '../widgets/payment_qr_card.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -26,7 +27,18 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   Map<String, dynamic>? _settings, _order;
   String _method = 'cash';
-  String? _error, _paymentUrl;
+  String? _error;
+  String? get _paymentUrl => _order?['payment_url'] as String?;
+  bool get _isBusiness => _order?['payment_provider'] == 'momo_business';
+  bool get _isLegacy => _order?['payment_provider'] == 'legacy_review';
+  bool get _pastDeadline {
+    final deadline = DateTime.tryParse(
+      _order?['payment_expires_at'] as String? ?? '',
+    );
+    return deadline != null &&
+        !DateTime.now().toUtc().isBefore(deadline.toUtc());
+  }
+
   bool _busy = false, _loading = true;
   Timer? _statusTimer;
   RealtimeChannel? _statusChannel;
@@ -62,7 +74,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             column: 'id',
             value: _order!['id'] as String,
           ),
-          callback: (_) => _refresh(),
+          callback: (_) => _refresh(reconcile: false),
         )
         .subscribe();
   }
@@ -104,23 +116,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           .select()
           .single();
       _watchStatus();
-      if (_method == 'online' && _settings?['online_enabled'] == true) {
-        final response = await SupabaseService.client!.functions.invoke(
-          'membership-payment',
-          body: {'request_id': _order!['id']},
-        );
-        final data = response.data as Map;
-        if (data['payment_url'] is! String) {
-          throw StateError(
-            data['error'] as String? ?? 'Không tạo được phiên thanh toán',
-          );
-        }
-        final uri = Uri.parse(data['payment_url'] as String);
-        if (uri.scheme != 'https') {
-          throw StateError('Đường dẫn thanh toán không hợp lệ');
-        }
-        _paymentUrl = uri.toString();
-      }
+      if (_isBusiness) await _gateway('create');
     } catch (e) {
       _error = e.toString();
     }
@@ -128,7 +124,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _cancel() async {
-    if (_order == null) return;
+    if (_order == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       await SupabaseService.client!.rpc(
         'cancel_own_membership_request',
@@ -137,19 +137,42 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _refresh() async {
-    if (_order == null || _refreshing || !mounted) return;
+  Future<void> _gateway(String action) async {
+    final response = await SupabaseService.client!.functions.invoke(
+      'membership-payment',
+      body: {'request_id': _order!['id'], 'action': action},
+    );
+    final data = response.data as Map;
+    if (data['order'] is! Map) {
+      throw StateError(
+        data['error'] as String? ?? 'Không kiểm tra được trạng thái thanh toán',
+      );
+    }
+    _order = Map<String, dynamic>.from(data['order'] as Map);
+  }
+
+  Future<void> _refresh({bool reconcile = true}) async {
+    if (_order == null || _refreshing || _busy || !mounted) return;
     _refreshing = true;
     try {
-      final order = await SupabaseService.client!
-          .from('membership_renewal_requests')
-          .select()
-          .eq('id', _order!['id'])
-          .single();
-      if (mounted) setState(() => _order = order);
+      _order = await refreshPaymentOrder(
+        read: () async => await SupabaseService.client!
+            .from('membership_renewal_requests')
+            .select()
+            .eq('id', _order!['id'])
+            .single(),
+        reconcile: () async {
+          await _gateway('status');
+          return _order!;
+        },
+        reconcileGateway: reconcile,
+      );
+      if (mounted) setState(() => _error = null);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -175,7 +198,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ? ''
         : 'FP${(order['id'] as String).replaceAll('-', '').toUpperCase()}';
     final approved = order?['status'] == 'approved';
-    final rejected = order?['status'] == 'rejected';
+    final rejected = [
+      'rejected',
+      'expired',
+      'cancelled',
+    ].contains(order?['status']);
     return Scaffold(
       appBar: AppBar(title: LocalizedText('Thanh toán gói tập')),
       body: _loading
@@ -258,11 +285,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       LocalizedText(
                         'Gói tập đã được kích hoạt. Bạn có thể quay lại xem hợp đồng.',
                       ),
-                    ] else if (rejected)
+                    ] else if (rejected) ...[
                       LocalizedText(
                         'Yêu cầu đã đóng. Hãy quay lại và chọn gói tập để tạo yêu cầu mới.',
-                      )
-                    else ...[
+                      ),
+                      if ((_isBusiness || _isLegacy) &&
+                          order['gateway_started_at'] != null)
+                        OutlinedButton(
+                          onPressed: _refresh,
+                          child: LocalizedText('Kiểm tra trạng thái'),
+                        ),
+                    ] else ...[
                       _copy('Mã yêu cầu', reference),
                       if (_method == 'cash')
                         LocalizedText(
@@ -296,7 +329,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                       ],
                       if (_method == 'online' &&
-                          _settings?['online_enabled'] != true) ...[
+                          !_isBusiness &&
+                          !_isLegacy) ...[
                         if (_settings?['momo_phone'] == '0775571311')
                           PaymentQrCard(
                             data: PaymentQrService.forOrder(
@@ -322,14 +356,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           'Phòng tập sẽ đối chiếu giao dịch và gửi thông báo sau khi xác nhận.',
                         ),
                       ],
-                      if (_method == 'online' &&
-                          _settings?['online_enabled'] == true) ...[
-                        if (_paymentUrl == null)
+                      if (_isLegacy)
+                        LocalizedText(
+                          'Đơn MoMo cũ cần phòng tập xác minh phương thức. Chọn Kiểm tra trạng thái hoặc liên hệ phòng tập trước khi thanh toán tiếp.',
+                        ),
+                      if (_isBusiness) ...[
+                        if (!_pastDeadline &&
+                            _paymentUrl == null &&
+                            order['gateway_started_at'] == null)
                           FilledButton(
                             onPressed: _busy ? null : _submit,
                             child: LocalizedText('Tạo phiên thanh toán online'),
                           ),
-                        if (_paymentUrl != null)
+                        if (_paymentUrl != null && !_pastDeadline)
                           FilledButton.icon(
                             onPressed: () async {
                               final opened = await launchUrl(
@@ -346,19 +385,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             icon: const Icon(Icons.open_in_new),
                             label: LocalizedText('Mở cổng thanh toán'),
                           ),
-                        LocalizedText(
-                          'Sau khi thanh toán, quay lại đây và kiểm tra trạng thái.',
-                        ),
+                        if (_pastDeadline)
+                          LocalizedText(
+                            'Đã đến hạn kiểm tra thanh toán. Chọn Kiểm tra trạng thái trước khi đăng ký lại.',
+                          )
+                        else
+                          LocalizedText(
+                            'Sau khi thanh toán, quay lại đây và kiểm tra trạng thái.',
+                          ),
+                        if (order['gateway_started_at'] != null &&
+                            _paymentUrl == null)
+                          LocalizedText(
+                            'Đang xác minh phiên MoMo. Không chuyển tiền lại; hãy kiểm tra trạng thái hoặc liên hệ phòng tập.',
+                          ),
                       ],
                       const SizedBox(height: 20),
                       OutlinedButton(
                         onPressed: _refresh,
                         child: LocalizedText('Kiểm tra trạng thái'),
                       ),
-                      if (_method != 'online' ||
-                          _settings?['online_enabled'] != true)
+                      if (!_isLegacy &&
+                          (!_isBusiness || order['gateway_started_at'] == null))
                         TextButton(
-                          onPressed: _cancel,
+                          onPressed: _busy ? null : _cancel,
                           child: LocalizedText('Hủy yêu cầu'),
                         ),
                     ],

@@ -224,23 +224,6 @@ class CloudSyncService {
       _assertCurrentUser(userId, storage);
       await WorkoutScheduleRepository.ensureCurrentWeek();
 
-      if (membershipRows.isNotEmpty) {
-        final item = membershipRows.first;
-        await storage.saveMembership(
-          MembershipPlan(
-            id: item['id'] as String,
-            name: item['name'] as String,
-            branchName: item['branch_name'] as String,
-            startDate: DateTime.parse(item['start_date'] as String),
-            endDate: DateTime.parse(item['end_date'] as String),
-            usedSessions: (item['used_sessions'] as num).toInt(),
-            totalSessions: (item['total_sessions'] as num).toInt(),
-            price: (item['price'] as num).toInt(),
-            active: item['active'] as bool? ?? true,
-          ),
-        );
-      }
-
       await storage.saveNotices(
         noticeRows
             .map(
@@ -255,6 +238,14 @@ class CloudSyncService {
             )
             .toList(),
       );
+      _assertCurrentUser(userId, storage);
+      // Reuse the successfully fetched rows and clean stale expiry notices
+      // after restoring notifications, so the restore cannot re-add them.
+      await storage.refreshMembership(
+        () async => membershipRows,
+        userId: userId,
+      );
+      _assertCurrentUser(userId, storage);
       lastSyncAt = DateTime.now();
       return lastError == null;
     } catch (error) {

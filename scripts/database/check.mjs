@@ -68,6 +68,35 @@ assert(
   "Realtime must publish the three RLS-protected tables exactly once",
 );
 console.log("Realtime publication and Vietnam timezone migration OK");
+// Legacy online rows can be ambiguous even with Business currently disabled:
+// a previous create request may have timed out before its URL was persisted.
+const legacyUsers = [
+  "44444444-4444-4444-8444-444444444444",
+  "55555555-5555-4555-8555-555555555555",
+];
+const legacyOrders = [];
+for (const user of legacyUsers) {
+  await db.query("insert into auth.users(id) values($1)", [user]);
+  legacyOrders.push(
+    (await db.query(
+      `insert into public.membership_renewal_requests(user_id,package_id,payment_method)
+    values($1,(select id from public.gym_packages limit 1),'online') returning *`,
+      [user],
+    )).rows[0],
+  );
+}
+// New migrations must be exercised in both bundled and sequential runs.
+await db.exec(
+  await readFile(
+    "supabase/migrations/20261031000000_membership_payment_lifecycle.sql",
+    "utf8",
+  ),
+);
+await (await import("./payment_lifecycle.mjs")).checkLegacyMigration(
+  db,
+  legacyOrders,
+  assert,
+);
 const settings =
   (await db.query("select * from public.payment_settings")).rows[0];
 assert(
@@ -95,7 +124,8 @@ assert(
 );
 const uid = "11111111-1111-4111-8111-111111111111";
 const other = "22222222-2222-4222-8222-222222222222";
-await db.exec(`insert into auth.users values('${uid}'),('${other}');
+await db.exec(`update public.payment_settings set online_enabled=true;
+  insert into auth.users values('${uid}'),('${other}');
   insert into public.gym_packages(id,name,duration_days,duration_months,price,branch_name) values('33333333-3333-4333-8333-333333333333','SQL TEST ONLY',30,1,100000,'TEST ONLY');
   select set_config('request.jwt.claim.sub','${uid}',false);
   select set_config('request.jwt.claim.role','authenticated',false);
@@ -289,5 +319,11 @@ assert(
 );
 console.log(
   "PASS: migrations, RLS, payment lifecycle, atomic workout sync and duration persistence.",
+);
+await (await import("./payment_lifecycle.mjs")).checkPaymentLifecycle(
+  db,
+  uid,
+  other,
+  assert,
 );
 await db.close();
