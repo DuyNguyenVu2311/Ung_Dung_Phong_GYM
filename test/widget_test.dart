@@ -230,6 +230,19 @@ void main() {
     await tester.ensureVisible(favoriteButton);
     await tester.tap(favoriteButton);
     await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      final deadline = DateTime.now().add(const Duration(seconds: 2));
+      while ((StorageService
+                      .instance
+                      .pendingSyncChanges[StorageService.syncFavorites]
+                      ?.isNotEmpty ??
+                  false) ==
+              false &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
     expect(StorageService.instance.loadFavoriteExerciseIds(), hasLength(1));
@@ -257,8 +270,17 @@ void main() {
     await tester.enterText(find.byType(TextField), '72.5');
     await tester.tap(find.text('Lưu số đo'));
     await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      final deadline = DateTime.now().add(const Duration(seconds: 2));
+      while (!StorageService.instance.hasPendingSyncChanges &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pumpAndSettle();
 
     expect(StorageService.instance.loadBodyMeasurements(), hasLength(1));
+    expect(StorageService.instance.hasPendingSyncChanges, isTrue);
     expect(find.text('72.5 kg'), findsOneWidget);
   });
 

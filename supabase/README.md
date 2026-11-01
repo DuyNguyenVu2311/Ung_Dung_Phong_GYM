@@ -9,7 +9,9 @@
 5. Run `migrations/20261030010000_app_improvements.sql`.
 6. Run `APPLY_UPGRADE.sql` once (bundles migrations 020000–040000). Do not also apply those three files separately.
 7. Run `migrations/20261030050000_live_payment_updates.sql`.
-8. In **Authentication > Providers**, enable Email. Keep email confirmation enabled for real accounts and allow `fitplan://login-callback/` in Redirect URLs for mobile.
+8. Run `migrations/20261101000000_atomic_workout_sync.sql`.
+9. Run `migrations/20261101010000_workout_duration_sync.sql`.
+10. In **Authentication > Providers**, enable Email. Keep email confirmation enabled for real accounts and allow `fitplan://login-callback/` in Redirect URLs for mobile.
 
 All personal tables use Row Level Security. A signed-in user can only access rows whose `user_id` matches their account.
 
@@ -39,3 +41,24 @@ The app includes the project's public URL and publishable client key as defaults
 7. Check the rows in Supabase Table Editor.
 
 FitPlan keeps a local copy in `SharedPreferences` and pushes it to Supabase after important changes. This gives the app a usable offline-first fallback.
+
+## Offline sync and restore behavior
+
+Local changes are journaled in account-scoped `SharedPreferences` until the
+matching Supabase write succeeds. While a change is pending, the local profile,
+check-in, measurement, or workout with the same stable ID wins over its cloud
+version during restore. After acknowledgment, Supabase becomes authoritative
+for that item. Favorite additions and removals are tracked per exercise ID, so
+a pending removal is replayed as a deletion instead of being restored as a
+favorite. Unrelated cloud favorites are left untouched.
+
+Restore pages through history tables and applies the downloaded state only
+after all required queries succeed. A network/query failure therefore leaves
+the usable local cache and pending journal intact. Data cached by older
+versions is imported on the first journal initialization; removals made before
+per-item favorite tracking existed cannot be inferred retroactively.
+
+Workout session metadata and exercise logs are synchronized in one database
+transaction. The selected workout duration is stored with the profile and
+restored before the local weekly plan is regenerated; completed or in-progress
+days remain preserved.
