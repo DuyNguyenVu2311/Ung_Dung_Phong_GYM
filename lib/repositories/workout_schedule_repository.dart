@@ -7,11 +7,11 @@ import 'workout_plan_repository.dart';
 
 class WorkoutScheduleRepository {
   static const _kSchedule = 'fit_schedule';
-  static int get workoutMinutes =>
-      int.tryParse(StorageService.getString('fit_workout_minutes') ?? '') ?? 60;
+  static const _kScheduleWorkoutMinutes = 'fit_schedule_workout_minutes';
+  static int get workoutMinutes => StorageService.instance.loadWorkoutMinutes();
 
   static Future<void> setWorkoutMinutes(int minutes) async {
-    await StorageService.setString('fit_workout_minutes', '$minutes');
+    await StorageService.instance.saveWorkoutMinutes(minutes);
     final profile = StorageService.instance.loadProfile();
     if (profile == null) return;
     await updateFutureSchedule(
@@ -37,6 +37,10 @@ class WorkoutScheduleRepository {
         : DateTime.tryParse(existing.first['date'] as String? ?? '');
     if (first != null &&
         AppClock.sameDay(first, monday) &&
+        int.tryParse(
+              StorageService.getString(_kScheduleWorkoutMinutes) ?? '',
+            ) ==
+            workoutMinutes &&
         existing.every(
           (day) =>
               day['planVersion'] == WorkoutPlanRepository.version ||
@@ -167,6 +171,7 @@ class WorkoutScheduleRepository {
     }
 
     await StorageService.setString(_kSchedule, jsonEncode(schedule));
+    await StorageService.setString(_kScheduleWorkoutMinutes, '$workoutMinutes');
     return _applyTodayCheckIn(schedule, now);
   }
 

@@ -7,6 +7,7 @@ import '../widgets/modern_components.dart';
 import '../models/data_models.dart';
 import '../repositories/workout_plan_repository.dart';
 import '../repositories/workout_schedule_repository.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/storage_service.dart';
 
 class WorkoutPlanScreen extends StatefulWidget {
@@ -136,6 +137,7 @@ class _WorkoutPlanScreenState extends State<WorkoutPlanScreen> {
                             await WorkoutScheduleRepository.setWorkoutMinutes(
                               minutes,
                             );
+                            await CloudSyncService.instance.syncNow();
                             await _load();
                           },
                         ),

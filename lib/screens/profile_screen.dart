@@ -624,7 +624,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   content: LocalizedText(
                                     success
                                         ? 'Đã đồng bộ dữ liệu lên Supabase'
-                                        : 'Chưa thể đồng bộ. Kiểm tra migration và kết nối.',
+                                        : CloudSyncService.instance.lastError ?? 'Chưa thể đồng bộ. Kiểm tra migration và kết nối.',
                                   ),
                                 ),
                               );

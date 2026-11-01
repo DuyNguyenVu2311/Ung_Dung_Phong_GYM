@@ -295,7 +295,6 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
     final isFavorite = await StorageService.instance.toggleFavoriteExercise(
       exercise.id,
     );
-    await CloudSyncService.instance.syncNow();
     if (!mounted) return;
     setState(() {
       if (isFavorite) {
@@ -304,6 +303,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
         _favorites.remove(exercise.id);
       }
     });
+    await CloudSyncService.instance.syncNow();
   }
 
   Widget _badge(String label, Color color) => Container(

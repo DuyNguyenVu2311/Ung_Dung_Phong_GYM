@@ -448,11 +448,12 @@ class _ProgressStatisticsScreenState extends State<ProgressStatisticsScreen> {
       weight: value,
     );
     await StorageService.instance.addBodyMeasurement(measurement);
-    await CloudSyncService.instance.syncNow();
     if (!mounted) return;
-    setState(
-      () => _measurements = StorageService.instance.loadBodyMeasurements(),
-    );
+    setState(() {
+      _measurements = [..._measurements, measurement]
+        ..sort((a, b) => a.date.compareTo(b.date));
+    });
+    await CloudSyncService.instance.syncNow();
   }
 
   Widget _stat(String label, String value, IconData icon, Color color) =>
