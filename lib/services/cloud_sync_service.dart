@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/data_models.dart';
+import '../repositories/workout_schedule_repository.dart';
+import 'sync_request_coordinator.dart';
 import 'storage_service.dart';
 import 'supabase_service.dart';
 
@@ -8,43 +11,157 @@ class CloudSyncService {
   CloudSyncService._();
 
   static final instance = CloudSyncService._();
+  static const _pageSize = 500;
+  final SyncRequestCoordinator _syncRequests = SyncRequestCoordinator();
 
   final ValueNotifier<bool> syncing = ValueNotifier(false);
   DateTime? lastSyncAt;
   String? lastError;
+  Future<bool>? _restoreTask;
 
   bool get canSync => SupabaseService.currentUser != null;
 
-  Future<bool> restoreOrUpload() async {
+  Future<bool> restoreOrUpload() {
+    final activeRestore = _restoreTask;
+    if (activeRestore != null) return activeRestore;
+    final task = _restoreAfterCurrentSync();
+    _restoreTask = task;
+    return task.whenComplete(() {
+      if (identical(_restoreTask, task)) _restoreTask = null;
+    });
+  }
+
+  Future<bool> _restoreAfterCurrentSync() async {
+    if (syncing.value && !await _syncRequests.run(_syncPass)) return false;
+    return _restoreAndUpload();
+  }
+
+  Future<bool> _restoreAndUpload() async {
     final client = SupabaseService.client;
     final user = SupabaseService.currentUser;
     if (client == null || user == null) return false;
     try {
+      final storage = StorageService.instance;
+      _assertCurrentUser(user.id, storage);
+      await storage.ensureSyncJournalInitialized();
       final profile = await client
           .from('profiles')
           .select('user_id')
           .eq('user_id', user.id)
           .maybeSingle();
-      if (profile == null) return await syncNow();
-      return await _restoreFromCloud(user.id);
+      _assertCurrentUser(user.id, storage);
+      if (profile == null) {
+        await _syncRequests.run(_syncPass);
+        return true;
+      }
+      if (!await _restoreFromCloud(user.id)) return false;
+      await _syncRequests.run(_syncPass);
+      return true;
     } catch (error) {
       lastError = error.toString();
       return false;
     }
   }
 
+  Future<List<Map<String, dynamic>>> _fetchRows({
+    required SupabaseClient client,
+    required StorageService storage,
+    required String userId,
+    required String table,
+    required String orderBy,
+    String columns = '*',
+  }) async {
+    final rows = <Map<String, dynamic>>[];
+    var offset = 0;
+    while (true) {
+      final page = await client
+          .from(table)
+          .select(columns)
+          .eq('user_id', userId)
+          .order(orderBy)
+          .order(orderBy == 'exercise_id' ? 'exercise_id' : 'id')
+          .range(offset, offset + _pageSize - 1);
+      _assertCurrentUser(userId, storage);
+      rows.addAll(page);
+      if (page.length < _pageSize) return rows;
+      offset += _pageSize;
+    }
+  }
+
+  void _assertCurrentUser(String userId, StorageService storage) {
+    if (SupabaseService.currentUser?.id != userId ||
+        !storage.isBoundToUser(userId)) {
+      throw StateError('Tài khoản đã thay đổi trong khi đồng bộ');
+    }
+  }
+
+  String _checkInKey(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
   Future<bool> _restoreFromCloud(String userId) async {
-    final client = SupabaseService.client!;
-    if (syncing.value) return false;
+    final client = SupabaseService.client;
+    final storage = StorageService.instance;
+    if (client == null || syncing.value) return false;
     syncing.value = true;
     lastError = null;
     try {
-      final storage = StorageService.instance;
+      _assertCurrentUser(userId, storage);
       final profileJson = await client
           .from('profiles')
           .select()
           .eq('user_id', userId)
           .single();
+      _assertCurrentUser(userId, storage);
+
+      final checkInRows = await _fetchRows(
+        client: client,
+        storage: storage,
+        userId: userId,
+        table: 'daily_check_ins',
+        orderBy: 'check_in_date',
+      );
+      final measurementRows = await _fetchRows(
+        client: client,
+        storage: storage,
+        userId: userId,
+        table: 'body_measurements',
+        orderBy: 'measured_at',
+      );
+      final favoriteRows = await _fetchRows(
+        client: client,
+        storage: storage,
+        userId: userId,
+        table: 'favorite_exercises',
+        orderBy: 'exercise_id',
+        columns: 'exercise_id',
+      );
+      final sessionRows = await _fetchRows(
+        client: client,
+        storage: storage,
+        userId: userId,
+        table: 'workout_sessions',
+        orderBy: 'performed_at',
+        columns: 'id,client_session_id,day_name,performed_at,branch_name,check_in_at,exercise_logs(exercise_name,sets,reps,weight_kg,rpe,is_personal_record)',
+      );
+      final membershipRows = await client
+          .from('memberships')
+          .select()
+          .eq('user_id', userId)
+          .eq('active', true)
+          .order('end_date', ascending: false)
+          .limit(1);
+      _assertCurrentUser(userId, storage);
+      final noticeRows = await _fetchRows(
+        client: client,
+        storage: storage,
+        userId: userId,
+        table: 'app_notifications',
+        orderBy: 'created_at',
+      );
+      _assertCurrentUser(userId, storage);
+
       final profile = UserProfile(
         name: profileJson['name'] as String? ?? '',
         age: (profileJson['age'] as num?)?.toInt() ?? 22,
@@ -69,110 +186,44 @@ class CloudSyncService {
             profileJson['dietary_preference'] as String? ?? 'balanced',
         healthNotes: profileJson['health_notes'] as String? ?? '',
       );
-      await storage.saveProfile(profile);
-      await storage.saveGoal(profile.goal);
-      await storage.saveLevel(profile.experienceLevel);
-      await storage.saveSessionsPerWeek(profile.sessionsPerWeek);
 
-      final checkIns = await client
-          .from('daily_check_ins')
-          .select()
-          .eq('user_id', userId)
-          .order('check_in_date', ascending: false);
-      if (checkIns.isNotEmpty) {
-        final restored = checkIns
-            .map(
-              (item) => DailyCheckIn(
-                date: DateTime.parse(item['check_in_date'] as String),
-                energy: (item['energy'] as num).toInt(),
-                soreness: (item['soreness'] as num).toInt(),
-                sleepQuality: (item['sleep_quality'] as num).toInt(),
-                availableMinutes: (item['available_minutes'] as num).toInt(),
-              ),
-            )
-            .toList();
-        await storage.saveDailyCheckIns(restored);
-        await storage.saveDailyCheckIn(restored.first);
-      }
-
-      final measurementRows = await client
-          .from('body_measurements')
-          .select()
-          .eq('user_id', userId)
-          .order('measured_at');
-      await storage.saveBodyMeasurements(
-        measurementRows
-            .map(
-              (item) => BodyMeasurement(
-                id: item['client_id'] as String,
-                date: DateTime.parse(item['measured_at'] as String),
-                weight: (item['weight_kg'] as num).toDouble(),
-              ),
-            )
-            .toList(),
-      );
-
-      final favoriteRows = await client
-          .from('favorite_exercises')
-          .select('exercise_id')
-          .eq('user_id', userId);
-      await storage.saveFavoriteExerciseIds(
-        favoriteRows.map((item) => item['exercise_id'] as String).toSet(),
-      );
-
-      final sessionRows = await client
-          .from('workout_sessions')
-          .select(
-            'id,client_session_id,day_name,performed_at,branch_name,check_in_at,exercise_logs(exercise_name,sets,reps,weight_kg,rpe,is_personal_record)',
+      final remoteCheckIns = checkInRows
+          .map(
+            (item) => DailyCheckIn(
+              date: DateTime.parse(item['check_in_date'] as String),
+              energy: (item['energy'] as num).toInt(),
+              soreness: (item['soreness'] as num).toInt(),
+              sleepQuality: (item['sleep_quality'] as num).toInt(),
+              availableMinutes: (item['available_minutes'] as num).toInt(),
+            ),
           )
-          .eq('user_id', userId)
-          .order('performed_at');
-      final sessions = sessionRows.map((item) {
-        final localId =
-            item['client_session_id'] as String? ?? item['id'] as String;
-        final logs = (item['exercise_logs'] as List<dynamic>? ?? [])
-            .map(
-              (raw) => ExerciseLog(
-                id: '${localId}_${raw.hashCode}',
-                sessionId: localId,
-                exerciseName: raw['exercise_name'] as String? ?? '',
-                sets: (raw['sets'] as num?)?.toInt() ?? 0,
-                reps: (raw['reps'] as num?)?.toInt() ?? 0,
-                weight: (raw['weight_kg'] as num?)?.toDouble() ?? 0,
-                rpe: (raw['rpe'] as num?)?.toInt() ?? 7,
-                isPersonalRecord: raw['is_personal_record'] as bool? ?? false,
-              ),
-            )
-            .toList();
-        return WorkoutSession(
-          id: localId,
-          dayName: item['day_name'] as String? ?? '',
-          date: DateTime.parse(item['performed_at'] as String),
-          logs: logs,
-          branchName: item['branch_name'] as String? ?? 'FitPlan Center',
-          checkedInAt: item['check_in_at'] == null
-              ? null
-              : DateTime.tryParse(item['check_in_at'] as String),
-        );
-      }).toList();
-      await storage.saveWorkoutSessions(sessions);
+          .toList();
 
-      await storage.refreshMembership(
-        () async => await client
-            .from('memberships')
-            .select()
-            .eq('user_id', userId)
-            .eq('active', true)
-            .order('end_date', ascending: false)
-            .limit(1),
+      final remoteMeasurements = measurementRows
+          .map(
+            (item) => BodyMeasurement(
+              id: item['client_id'] as String,
+              date: DateTime.parse(item['measured_at'] as String),
+              weight: (item['weight_kg'] as num).toDouble(),
+            ),
+          )
+          .toList();
+      final remoteFavorites = favoriteRows
+          .map((item) => item['exercise_id'] as String)
+          .toSet();
+      final remoteSessions = sessionRows.map(_sessionFromCloud).toList();
+      await storage.restoreCloudSnapshot(
         userId: userId,
+        profile: profile,
+        workoutMinutes: (profileJson['workout_minutes'] as num?)?.toInt() ?? 60,
+        checkIns: remoteCheckIns,
+        measurements: remoteMeasurements,
+        favoriteIds: remoteFavorites,
+        sessions: remoteSessions,
       );
+      _assertCurrentUser(userId, storage);
+      await WorkoutScheduleRepository.ensureCurrentWeek();
 
-      final noticeRows = await client
-          .from('app_notifications')
-          .select()
-          .eq('user_id', userId)
-          .order('created_at', ascending: false);
       await storage.saveNotices(
         noticeRows
             .map(
@@ -187,8 +238,16 @@ class CloudSyncService {
             )
             .toList(),
       );
+      _assertCurrentUser(userId, storage);
+      // Reuse the successfully fetched rows and clean stale expiry notices
+      // after restoring notifications, so the restore cannot re-add them.
+      await storage.refreshMembership(
+        () async => membershipRows,
+        userId: userId,
+      );
+      _assertCurrentUser(userId, storage);
       lastSyncAt = DateTime.now();
-      return true;
+      return lastError == null;
     } catch (error) {
       lastError = error.toString();
       return false;
@@ -197,17 +256,85 @@ class CloudSyncService {
     }
   }
 
-  Future<bool> syncNow() async {
+  bool _isMissingWorkoutMinutesColumn(PostgrestException error) =>
+      error.code == 'PGRST204' &&
+      error.message.contains('workout_minutes') &&
+      error.message.contains('profiles');
+
+  WorkoutSession _sessionFromCloud(Map<String, dynamic> item) {
+    final localId =
+        item['client_session_id'] as String? ?? item['id'] as String;
+    final logs = (item['exercise_logs'] as List<dynamic>? ?? [])
+        .map(
+          (raw) => ExerciseLog(
+            id: '${localId}_${raw.hashCode}',
+            sessionId: localId,
+            exerciseName: raw['exercise_name'] as String? ?? '',
+            sets: (raw['sets'] as num?)?.toInt() ?? 0,
+            reps: (raw['reps'] as num?)?.toInt() ?? 0,
+            weight: (raw['weight_kg'] as num?)?.toDouble() ?? 0,
+            rpe: (raw['rpe'] as num?)?.toInt() ?? 7,
+            isPersonalRecord: raw['is_personal_record'] as bool? ?? false,
+          ),
+        )
+        .toList();
+    return WorkoutSession(
+      id: localId,
+      dayName: item['day_name'] as String? ?? '',
+      date: DateTime.parse(item['performed_at'] as String),
+      logs: logs,
+      branchName: item['branch_name'] as String? ?? 'FitPlan Center',
+      checkedInAt: item['check_in_at'] == null
+          ? null
+          : DateTime.tryParse(item['check_in_at'] as String),
+    );
+  }
+
+  Future<bool> syncNow() {
+    final activeRestore = _restoreTask;
+    if (activeRestore != null) return activeRestore;
+    return _syncRequests.run(_syncPass);
+  }
+
+  Future<bool> _syncPass() async {
     final client = SupabaseService.client;
     final user = SupabaseService.currentUser;
+    final storage = StorageService.instance;
     if (client == null || user == null || syncing.value) return false;
     syncing.value = true;
     lastError = null;
     try {
-      final storage = StorageService.instance;
-      final profile = storage.loadProfile();
-      if (profile != null) {
-        await client.from('profiles').upsert({
+      _assertCurrentUser(user.id, storage);
+      await storage.ensureSyncJournalInitialized();
+      final pending = storage.pendingSyncChanges;
+      final profileRevision = pending[StorageService.syncProfile]?['profile'];
+      final checkInRevisions =
+          pending[StorageService.syncCheckIns] ?? const <String, int>{};
+      final measurementRevisions =
+          pending[StorageService.syncMeasurements] ?? const <String, int>{};
+      final favoriteRevisions =
+          pending[StorageService.syncFavorites] ?? const <String, int>{};
+      final sessionRevisions =
+          pending[StorageService.syncSessions] ?? const <String, int>{};
+
+      final profile = profileRevision == null ? null : storage.loadProfile();
+      final checkIns = {
+        for (final item in storage.loadDailyCheckIns())
+          _checkInKey(item.date): item,
+      };
+      final measurements = {
+        for (final item in storage.loadBodyMeasurements()) item.id: item,
+      };
+      final favorites = storage.loadFavoriteExerciseIds();
+      final sessions = {
+        for (final item in storage.loadWorkoutSessions()) item.id: item,
+      };
+
+      if (profileRevision != null) {
+        if (profile == null) {
+          throw StateError('Hồ sơ chờ đồng bộ không tồn tại');
+        }
+        final profileValues = {
           'user_id': user.id,
           'name': profile.name,
           'age': profile.age,
@@ -226,97 +353,132 @@ class CloudSyncService {
           'dietary_preference': profile.dietaryPreference,
           'health_notes': profile.healthNotes,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
-        }, onConflict: 'user_id');
+        };
+        try {
+          await client.from('profiles').upsert({
+            ...profileValues,
+            'workout_minutes': storage.loadWorkoutMinutes(),
+          }, onConflict: 'user_id');
+          await storage.acknowledgeSyncChange(
+            StorageService.syncProfile,
+            'profile',
+            profileRevision,
+            userId: user.id,
+          );
+        } on PostgrestException catch (error) {
+          if (!_isMissingWorkoutMinutesColumn(error)) rethrow;
+          await client
+              .from('profiles')
+              .upsert(profileValues, onConflict: 'user_id');
+          lastError =
+              'Hồ sơ đã đồng bộ, nhưng thời lượng tập chưa lên cloud. '
+              'Chạy migration 20261101010000_workout_duration_sync.sql '
+              'trong Supabase rồi đồng bộ lại.';
+        }
+        _assertCurrentUser(user.id, storage);
       }
 
-      final checkIns = storage.loadDailyCheckIns();
-      for (final checkIn in checkIns) {
-        final date = checkIn.date;
-        final dateOnly =
-            '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      for (final entry in checkInRevisions.entries) {
+        final checkIn = checkIns[entry.key];
+        if (checkIn == null) {
+          throw StateError('Check-in chờ đồng bộ không tồn tại: ${entry.key}');
+        }
         await client.from('daily_check_ins').upsert({
           'user_id': user.id,
-          'check_in_date': dateOnly,
+          'check_in_date': entry.key,
           'energy': checkIn.energy,
           'soreness': checkIn.soreness,
           'sleep_quality': checkIn.sleepQuality,
           'available_minutes': checkIn.availableMinutes,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
         }, onConflict: 'user_id,check_in_date');
+        _assertCurrentUser(user.id, storage);
+        await storage.acknowledgeSyncChange(
+          StorageService.syncCheckIns,
+          entry.key,
+          entry.value,
+          userId: user.id,
+        );
       }
 
-      final measurements = storage.loadBodyMeasurements();
-      if (measurements.isNotEmpty) {
-        await client
-            .from('body_measurements')
-            .upsert(
-              measurements
-                  .map(
-                    (item) => {
-                      'user_id': user.id,
-                      'client_id': item.id,
-                      'measured_at': item.date.toUtc().toIso8601String(),
-                      'weight_kg': item.weight,
-                    },
-                  )
-                  .toList(),
-              onConflict: 'user_id,client_id',
-            );
-      }
-
-      final favorites = storage.loadFavoriteExerciseIds();
-      await client.from('favorite_exercises').delete().eq('user_id', user.id);
-      if (favorites.isNotEmpty) {
-        await client
-            .from('favorite_exercises')
-            .insert(
-              favorites
-                  .map((id) => {'user_id': user.id, 'exercise_id': id})
-                  .toList(),
-            );
-      }
-
-      for (final session in storage.loadWorkoutSessions()) {
-        final remote = await client
-            .from('workout_sessions')
-            .upsert({
-              'user_id': user.id,
-              'client_session_id': session.id,
-              'day_name': session.dayName,
-              'performed_at': session.date.toUtc().toIso8601String(),
-              'branch_name': session.branchName,
-              'check_in_at': (session.checkedInAt ?? session.date)
-                  .toUtc()
-                  .toIso8601String(),
-            }, onConflict: 'user_id,client_session_id')
-            .select('id')
-            .single();
-        final remoteSessionId = remote['id'] as String;
-        await client
-            .from('exercise_logs')
-            .delete()
-            .eq('user_id', user.id)
-            .eq('session_id', remoteSessionId);
-        if (session.logs.isNotEmpty) {
-          await client
-              .from('exercise_logs')
-              .insert(
-                session.logs
-                    .map(
-                      (log) => {
-                        'user_id': user.id,
-                        'session_id': remoteSessionId,
-                        'exercise_name': log.exerciseName,
-                        'sets': log.sets,
-                        'reps': log.reps,
-                        'weight_kg': log.weight,
-                        'rpe': log.rpe,
-                        'is_personal_record': log.isPersonalRecord,
-                      },
-                    )
-                    .toList(),
-              );
+      for (final entry in measurementRevisions.entries) {
+        final item = measurements[entry.key];
+        if (item == null) {
+          throw StateError('Số đo chờ đồng bộ không tồn tại: ${entry.key}');
         }
+        await client.from('body_measurements').upsert({
+          'user_id': user.id,
+          'client_id': item.id,
+          'measured_at': item.date.toUtc().toIso8601String(),
+          'weight_kg': item.weight,
+        }, onConflict: 'user_id,client_id');
+        _assertCurrentUser(user.id, storage);
+        await storage.acknowledgeSyncChange(
+          StorageService.syncMeasurements,
+          entry.key,
+          entry.value,
+          userId: user.id,
+        );
+      }
+
+      for (final entry in favoriteRevisions.entries) {
+        if (favorites.contains(entry.key)) {
+          await client.from('favorite_exercises').upsert({
+            'user_id': user.id,
+            'exercise_id': entry.key,
+          }, onConflict: 'user_id,exercise_id');
+        } else {
+          await client
+              .from('favorite_exercises')
+              .delete()
+              .eq('user_id', user.id)
+              .eq('exercise_id', entry.key);
+        }
+        _assertCurrentUser(user.id, storage);
+        await storage.acknowledgeSyncChange(
+          StorageService.syncFavorites,
+          entry.key,
+          entry.value,
+          userId: user.id,
+        );
+      }
+
+      for (final entry in sessionRevisions.entries) {
+        final session = sessions[entry.key];
+        if (session == null) {
+          throw StateError('Buổi tập chờ đồng bộ không tồn tại: ${entry.key}');
+        }
+        await client.rpc(
+          'sync_workout_session',
+          params: {
+            'p_client_session_id': session.id,
+            'p_day_name': session.dayName,
+            'p_performed_at': session.date.toUtc().toIso8601String(),
+            'p_branch_name': session.branchName,
+            'p_check_in_at': (session.checkedInAt ?? session.date)
+                .toUtc()
+                .toIso8601String(),
+            'p_logs': session.logs
+                .map(
+                  (log) => {
+                    'exercise_name': log.exerciseName,
+                    'sets': log.sets,
+                    'reps': log.reps,
+                    'weight_kg': log.weight,
+                    'rpe': log.rpe,
+                    'is_personal_record': log.isPersonalRecord,
+                  },
+                )
+                .toList(),
+          },
+        );
+        _assertCurrentUser(user.id, storage);
+        await storage.acknowledgeSyncChange(
+          StorageService.syncSessions,
+          entry.key,
+          entry.value,
+          userId: user.id,
+        );
       }
 
       final notices = storage.loadNotices();
@@ -339,6 +501,7 @@ class CloudSyncService {
                   .toList(),
               onConflict: 'user_id,id',
             );
+        _assertCurrentUser(user.id, storage);
       }
 
       lastSyncAt = DateTime.now();

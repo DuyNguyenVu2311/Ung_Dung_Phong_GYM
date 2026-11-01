@@ -44,6 +44,19 @@ await db.exec(
 );
 await db.exec(
   await readFile(
+    "supabase/migrations/20261101000000_atomic_workout_sync.sql",
+    "utf8",
+  ),
+);
+await db.exec(
+  await readFile(
+    "supabase/migrations/20261101010000_workout_duration_sync.sql",
+    "utf8",
+  ),
+);
+console.log("Atomic workout sync migration OK");
+await db.exec(
+  await readFile(
     "supabase/migrations/20261030050000_live_payment_updates.sql",
     "utf8",
   ),
@@ -182,8 +195,130 @@ assert(
   "Payment must finalize atomically",
 );
 assert(contract.price === 100000, "Contract must use the quoted price");
+await db.exec(
+  `reset role;
+  select set_config('request.jwt.claim.sub','${uid}',false);
+  select set_config('request.jwt.claim.role','authenticated',false);
+  set role authenticated;`,
+);
+const firstWorkout = await db.query(
+  `select public.sync_workout_session($1,$2,$3,$4,$5,$6::jsonb) as id`,
+  [
+    "session-sync-test",
+    "Thứ Hai",
+    "2026-11-02T10:00:00Z",
+    "FitPlan Center",
+    "2026-11-02T10:00:00Z",
+    JSON.stringify([{
+      exercise_name: "Bench Press",
+      sets: 4,
+      reps: 8,
+      weight_kg: 60,
+      rpe: 7,
+      is_personal_record: false,
+    }]),
+  ],
+);
+const remoteSessionId = firstWorkout.rows[0].id;
+const replacementWorkout = await db.query(
+  `select public.sync_workout_session($1,$2,$3,$4,$5,$6::jsonb) as id`,
+  [
+    "session-sync-test",
+    "Thứ Hai",
+    "2026-11-02T10:00:00Z",
+    "FitPlan Center",
+    "2026-11-02T10:00:00Z",
+    JSON.stringify([{
+      exercise_name: "Squat",
+      sets: 3,
+      reps: 10,
+      weight_kg: 40,
+      rpe: 8,
+      is_personal_record: true,
+    }]),
+  ],
+);
+assert(
+  replacementWorkout.rows[0].id === remoteSessionId &&
+    (await db.query(
+      "select exercise_name from public.exercise_logs where session_id=$1",
+      [remoteSessionId],
+    )).rows.map((entry) => entry.exercise_name).join() === "Squat",
+  "Workout resync must atomically replace logs without duplicating the session",
+);
+let invalidWorkoutRejected = false;
+try {
+  await db.query(
+    `select public.sync_workout_session($1,$2,$3,$4,$5,$6::jsonb)`,
+    [
+      "session-sync-test",
+      "Thứ Hai",
+      "2026-11-02T10:00:00Z",
+      "FitPlan Center",
+      "2026-11-02T10:00:00Z",
+      JSON.stringify([{
+        exercise_name: "Invalid",
+        sets: 0,
+        reps: 10,
+        weight_kg: 40,
+        rpe: 8,
+        is_personal_record: false,
+      }]),
+    ],
+  );
+} catch {
+  invalidWorkoutRejected = true;
+}
+assert(
+  invalidWorkoutRejected &&
+    (await db.query(
+      "select exercise_name from public.exercise_logs where session_id=$1",
+      [remoteSessionId],
+    )).rows.map((entry) => entry.exercise_name).join() === "Squat",
+  "A failed workout replacement must leave the previous logs intact",
+);
+await db.query(
+  `insert into public.profiles(user_id,name,age,height_cm,weight_kg,gender,goal,experience_level,sessions_per_week)
+  values($1,'Database Test',30,170,65,'Nam','muscle','beginner',3)`,
+  [uid],
+);
+assert(
+  (await db.query(
+    "select workout_minutes from public.profiles where user_id=$1",
+    [uid],
+  )).rows[0].workout_minutes === 60,
+  "Existing and new profiles must default to a 60-minute workout",
+);
+await db.query(
+  "update public.profiles set workout_minutes=90 where user_id=$1",
+  [uid],
+);
+assert(
+  (await db.query(
+    "select workout_minutes from public.profiles where user_id=$1",
+    [uid],
+  )).rows[0].workout_minutes === 90,
+  "Workout duration preference must persist in the profile",
+);
+let invalidDurationRejected = false;
+try {
+  await db.query(
+    "update public.profiles set workout_minutes=121 where user_id=$1",
+    [uid],
+  );
+} catch {
+  invalidDurationRejected = true;
+}
+assert(
+  invalidDurationRejected &&
+    (await db.query(
+      "select workout_minutes from public.profiles where user_id=$1",
+      [uid],
+    )).rows[0].workout_minutes === 90,
+  "Invalid workout duration must not replace the saved preference",
+);
 console.log(
-  "PASS: migrations, RLS, immutable quote, amount rejection, atomic activation and duplicate IPN.",
+  "PASS: migrations, RLS, payment lifecycle, atomic workout sync and duration persistence.",
 );
 await (await import("./payment_lifecycle.mjs")).checkPaymentLifecycle(
   db,

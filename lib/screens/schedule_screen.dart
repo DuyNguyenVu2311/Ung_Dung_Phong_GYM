@@ -6,6 +6,7 @@ import '../services/app_localization.dart';
 
 import '../repositories/workout_plan_repository.dart';
 import '../repositories/workout_schedule_repository.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/modern_components.dart';
@@ -148,6 +149,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                                 await WorkoutScheduleRepository.setWorkoutMinutes(
                                   minutes,
                                 );
+                                await CloudSyncService.instance.syncNow();
                                 await _load();
                               },
                             ),
